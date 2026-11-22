@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.yuushilabs.call5mintimer.core.ElapsedTracker
 import com.yuushilabs.call5mintimer.core.TimerRules
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -28,12 +29,18 @@ enum class StartMode {
 data class AppSettings(
     val startMode: StartMode = StartMode.NOTIFICATION,
     val connectionOffsetSeconds: Int = 5,
+    /**
+     * 計測を始めるときの経過秒。相手が出てから計測が始まるまでのラグを埋めるための
+     * 「開始位置」（例: 6 で 0:06 からスタート）。既定の 0 は 0:00 から。
+     */
+    val startElapsedSeconds: Int = 0,
     val showElapsedInNotification: Boolean = true,
     val autoCheckUpdates: Boolean = true,
     val rules: TimerRules = TimerRules.ahamoDefault(),
 ) {
     fun normalized(): AppSettings = copy(
         connectionOffsetSeconds = connectionOffsetSeconds.coerceIn(0, 60),
+        startElapsedSeconds = startElapsedSeconds.coerceIn(0, ElapsedTracker.MAX_START_ELAPSED_SECONDS),
         rules = rules.normalized(),
     )
 }
@@ -43,6 +50,7 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 private val RULES_JSON = stringPreferencesKey("rules_json")
 private val START_MODE = stringPreferencesKey("start_mode")
 private val OFFSET_SECONDS = intPreferencesKey("offset_seconds")
+private val START_ELAPSED_SECONDS = intPreferencesKey("start_elapsed_seconds")
 private val SHOW_ELAPSED = booleanPreferencesKey("show_elapsed")
 private val AUTO_CHECK_UPDATES = booleanPreferencesKey("auto_check_updates")
 private val LAST_UPDATE_CHECK = longPreferencesKey("last_update_check")
@@ -66,6 +74,7 @@ class SettingsRepository(private val context: Context) {
                 else -> StartMode.NOTIFICATION
             },
             connectionOffsetSeconds = preferences[OFFSET_SECONDS] ?: 5,
+            startElapsedSeconds = preferences[START_ELAPSED_SECONDS] ?: 0,
             showElapsedInNotification = preferences[SHOW_ELAPSED] ?: true,
             autoCheckUpdates = preferences[AUTO_CHECK_UPDATES] ?: true,
             rules = readRules(preferences[RULES_JSON]),
@@ -82,6 +91,7 @@ class SettingsRepository(private val context: Context) {
                     else -> StartMode.NOTIFICATION
                 },
                 connectionOffsetSeconds = preferences[OFFSET_SECONDS] ?: 5,
+                startElapsedSeconds = preferences[START_ELAPSED_SECONDS] ?: 0,
                 showElapsedInNotification = preferences[SHOW_ELAPSED] ?: true,
                 autoCheckUpdates = preferences[AUTO_CHECK_UPDATES] ?: true,
                 rules = readRules(preferences[RULES_JSON]),
@@ -89,6 +99,7 @@ class SettingsRepository(private val context: Context) {
             val next = transform(current).normalized()
             preferences[START_MODE] = next.startMode.name
             preferences[OFFSET_SECONDS] = next.connectionOffsetSeconds
+            preferences[START_ELAPSED_SECONDS] = next.startElapsedSeconds
             preferences[SHOW_ELAPSED] = next.showElapsedInNotification
             preferences[AUTO_CHECK_UPDATES] = next.autoCheckUpdates
             preferences[RULES_JSON] = json.encodeToString(TimerRules.serializer(), next.rules)

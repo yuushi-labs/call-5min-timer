@@ -40,6 +40,11 @@ Android の一般アプリはシステム権限（`PRECISE_CALL_STATE` 等）を
 3. **開始時の合図（0分00秒）**
    - 計測が実際に開始された瞬間に、**バイブ 1 回（短）＋ 開始通知** を発火する。
    - これによりユーザーは「相手が出てカウントが正常に始まった」ことを耳や手元の振動で即座に確認できる。
+   - **開始位置（オフセット）**：相手が出てから計測が始まるまでのラグを埋めるため、計測開始時の経過秒を `startElapsedSeconds`（0〜30秒、既定 0）で設定できる（例: 6 で `0:06` からスタートし、54秒後に `1:00`）。
+     - 開始位置を進めても、上記の 0:00 の合図は計測開始の瞬間に 1 回だけ鳴らす（`ElapsedTracker`）。
+     - 開始位置より前の秒（例: 0:06 開始なら 3 秒・6 秒の合図）は「すでに過ぎた」ものとして鳴らさない（二重発火させない）。
+     - 通知・画面の経過表示も `0:06` から進み、5分の合図は実時間で 4:54 後に来る。
+     - 通知で検知する方式（`NOTIFICATION`）でもオフセット方式（`OFFSET`）でも同じように適用される。
 
 4. **終話検知**
    - `TelephonyCallback` の `CALL_STATE_IDLE`、または進行中通話通知の消滅を検知した時点で即座にタイマー・通知・`ForegroundService` を停止し、待機状態に戻る。
@@ -123,6 +128,7 @@ Android の一般アプリはシステム権限（`PRECISE_CALL_STATE` 等）を
 app/src/main/java/com/yuushilabs/call5mintimer/
 ├── core/
 │   ├── TimerEngine.kt            # 経過時間計算と発火ルール判定（純粋Kotlin・単体テスト対象）
+│   ├── ElapsedTracker.kt         # 開始位置（0:06 など）と発火済み秒の管理（単体テスト対象）
 │   ├── NotificationRule.kt       # 定期ルール / スポットルール / バイブ・音設定モデル
 │   └── CallNotificationParser.kt # 通話アプリの通知から「呼び出し中 / 通話開始」を判定
 ├── service/
@@ -146,6 +152,10 @@ app/src/main/java/com/yuushilabs/call5mintimer/
 - `TimerEngine`：
   - 0:00 開始合図、1:00〜4:00 の回数増加バイブ（1→2→3→4回）、4:30 長めバイブ＋音のスケジュール検証
   - カスタムルール（任意間隔、重複時刻、ON/OFF 切替）の境界値テスト
+- `ElapsedTracker`（開始位置の調整）：
+  - `startElapsedSeconds = 6` でも 0:00 の合図が開始瞬間に 1 回だけ鳴り、54秒後に 1:00 が発火、294秒後に 5:00 が発火すること
+  - 開始位置より前の秒（3秒・6秒）を鳴らさず、同じ秒を二重に返さないこと
+- `AppSettings`：`startElapsedSeconds` の既定値 0 と 0〜30 秒への丸め
 - `CallNotificationParser`：
   - OPPO 標準ダイヤラー／Google 電話アプリの「発信中」「呼び出し中」「00:00」「通話中」通知パターンのモック判定テスト
   - 「発信中」＋ `showChronometer=true` ＋ `00:00` 表示でも `DIALING`（カウントしない）こと、

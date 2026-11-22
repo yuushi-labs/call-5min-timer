@@ -39,12 +39,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.yuushilabs.call5mintimer.BuildConfig
 import com.yuushilabs.call5mintimer.core.AfterFiveMode
 import com.yuushilabs.call5mintimer.core.AlertEvent
+import com.yuushilabs.call5mintimer.core.ElapsedTracker
 import com.yuushilabs.call5mintimer.core.PeriodicRule
 import com.yuushilabs.call5mintimer.core.SpotRule
+import com.yuushilabs.call5mintimer.core.TimerEngine
 import com.yuushilabs.call5mintimer.core.TimerRules
 import com.yuushilabs.call5mintimer.core.formatClock
 import com.yuushilabs.call5mintimer.data.AppSettings
@@ -68,6 +71,7 @@ fun HomeScreen(
     onOpenBatterySettings: () -> Unit,
     onSetStartMode: (StartMode) -> Unit,
     onSetOffsetSeconds: (Int) -> Unit,
+    onSetStartElapsed: (Int) -> Unit,
     onSetShowElapsed: (Boolean) -> Unit,
     onSetAfterFive: (AfterFiveMode) -> Unit,
     onRestorePreset: () -> Unit,
@@ -112,6 +116,7 @@ fun HomeScreen(
                 settings = settings,
                 onSetStartMode = onSetStartMode,
                 onSetOffsetSeconds = onSetOffsetSeconds,
+                onSetStartElapsed = onSetStartElapsed,
                 onSetShowElapsed = onSetShowElapsed,
             )
         }
@@ -328,6 +333,7 @@ private fun StartModeCard(
     settings: AppSettings,
     onSetStartMode: (StartMode) -> Unit,
     onSetOffsetSeconds: (Int) -> Unit,
+    onSetStartElapsed: (Int) -> Unit,
     onSetShowElapsed: (Boolean) -> Unit,
 ) {
     SectionCard(
@@ -369,6 +375,56 @@ private fun StartModeCard(
                 onCheckedChange = onSetShowElapsed,
             )
         }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+        Text("開始時の経過秒", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "相手が出てから通知が「通話中」に変わるまでの遅れを埋めます。" +
+                "今は ${formatClock(settings.startElapsedSeconds)} から計測を始めます。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(
+                onClick = { onSetStartElapsed((settings.startElapsedSeconds - 1).coerceAtLeast(0)) },
+            ) {
+                Text("−1秒")
+            }
+            Text(
+                formatClock(settings.startElapsedSeconds),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(
+                onClick = {
+                    onSetStartElapsed(
+                        (settings.startElapsedSeconds + 1)
+                            .coerceAtMost(ElapsedTracker.MAX_START_ELAPSED_SECONDS),
+                    )
+                },
+            ) {
+                Text("+1秒")
+            }
+        }
+        Slider(
+            value = settings.startElapsedSeconds.toFloat(),
+            onValueChange = { onSetStartElapsed(it.toInt()) },
+            valueRange = 0f..ElapsedTracker.MAX_START_ELAPSED_SECONDS.toFloat(),
+            steps = ElapsedTracker.MAX_START_ELAPSED_SECONDS - 1,
+        )
+        Text(
+            if (settings.startElapsedSeconds > 0) {
+                "0:00 の合図は開始の瞬間に鳴り、5分の合図は " +
+                    "${formatClock(TimerEngine.FIVE_MINUTES - settings.startElapsedSeconds)} に来ます。"
+            } else {
+                "0:00 からスタート（既定）。計測が遅れる端末では 5〜8 秒ほどにすると実際の通話時間に近づきます。"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

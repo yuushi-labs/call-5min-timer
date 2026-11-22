@@ -17,6 +17,7 @@ import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import com.yuushilabs.call5mintimer.core.ElapsedTracker
 import com.yuushilabs.call5mintimer.core.TimerEngine
 import com.yuushilabs.call5mintimer.core.formatClock
 import com.yuushilabs.call5mintimer.data.AppSettings
@@ -64,7 +65,8 @@ class CallTimerForegroundService : Service() {
     private var pendingConnectedAtElapsed = 0L
     private var sessionStartElapsed = 0L
     private var countStartElapsed = 0L
-    private var lastDispatchedSecond = -1
+    private var tracker: ElapsedTracker? = null
+    private var startOffsetSeconds = 0
     private var sawNonIdle = false
     private var lastNotificationText = ""
 
@@ -152,7 +154,9 @@ class CallTimerForegroundService : Service() {
         CallTimerState.counting.value = true
         acquireWakeLock()
         countStartElapsed = baseElapsed + delayMillis
-        lastDispatchedSecond = -1
+        // 開始位置（0:06 など）は計測を始める瞬間の設定で決める。
+        startOffsetSeconds = settings.startElapsedSeconds
+        tracker = null
         tickJob?.cancel()
         tickJob = scope.launch { tickLoop() }
     }
@@ -161,23 +165,27 @@ class CallTimerForegroundService : Service() {
         while (scope.isActive) {
             val elapsedMs = SystemClock.elapsedRealtime() - countStartElapsed
             if (elapsedMs >= 0L) {
-                val elapsed = (elapsedMs / 1_000L).toInt()
                 val schedule = engine
                 if (schedule != null) {
-                    val due = schedule.eventsBetween(lastDispatchedSecond, elapsed)
+                    // 0:00 の合図は、開始位置（startElapsedSeconds）が 0 より大きくても
+                    // 計測を始めた瞬間に 1 回だけ鳴らす。
+                    val current = tracker ?: ElapsedTracker(schedule, startOffsetSeconds).also { tracker = it }
+                    current.takeStartCue().forEach { dispatcher.dispatch(it) }
+                    val delta = (elapsedMs / 1_000L).toInt()
+                    val elapsed = current.elapsedSeconds(delta)
+                    val due = current.takeDue(delta)
                     // 端末のスリープ等で大きく飛んだときは、古い合図をまとめて鳴らさない。
                     if (due.size > MAX_CATCH_UP_EVENTS) {
                         due.lastOrNull()?.let { dispatcher.dispatch(it) }
                     } else {
                         due.forEach { dispatcher.dispatch(it) }
                     }
-                    lastDispatchedSecond = elapsed
-                }
-                CallTimerState.elapsedSeconds.value = elapsed
-                updateStatus(elapsed)
-                if (elapsed >= MAX_CALL_SECONDS) {
-                    shutdown()
-                    return
+                    CallTimerState.elapsedSeconds.value = elapsed
+                    updateStatus(elapsed)
+                    if (elapsed >= MAX_CALL_SECONDS) {
+                        shutdown()
+                        return
+                    }
                 }
             }
             delay(TICK_INTERVAL_MS)
