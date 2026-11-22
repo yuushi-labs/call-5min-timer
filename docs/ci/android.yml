@@ -1,0 +1,60 @@
+name: Android CI
+
+# .github/workflows/android.yml へそのままコピーして使う純粋な YAML。
+# コピー手順と運用の説明は docs/ci/README.md を参照。
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Unit tests
+        run: ./gradlew --no-daemon testDebugUnitTest
+
+      - name: Lint
+        run: ./gradlew --no-daemon lintDebug
+
+      - name: Build release APK
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Verify signature
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK"
+          cp "$APK" "call-5min-timer-v$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts).apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: call-5min-timer-apk
+          path: android/call-5min-timer-v*.apk
+
+      - name: Attach APK to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android/call-5min-timer-v*.apk
+          generate_release_notes: true
