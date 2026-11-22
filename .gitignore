@@ -1,0 +1,16 @@
+# Gradle / Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.kotlin/
+*.iml
+.idea/
+
+# ビルド成果物
+android/app/release/
+*.apk
+!docs/**
+
+# OS
+.DS_Store

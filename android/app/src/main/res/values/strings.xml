@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">call-5min-timer</string>
+    <string name="notification_listener_label">通話タイマー（相手応答の検知）</string>
+    <string name="channel_status_name">通話中の経過表示</string>
+    <string name="channel_status_description">通話計測中の経過時間を通知領域に表示します。</string>
+    <string name="channel_alerts_name">経過のお知らせ</string>
+    <string name="channel_alerts_description">1分ごと・4分30秒などのタイミング通知です。</string>
+</resources>
