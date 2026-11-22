@@ -19,18 +19,18 @@ data class PermissionSnapshot(
     val phoneState: Boolean = false,
     val notifications: Boolean = false,
     val notificationAccess: Boolean = false,
-    val callRedirection: Boolean = false,
-    val installPackages: Boolean = false,
     val batteryExempt: Boolean = false,
 ) {
     /**
      * 発信を検知してタイマーを動かせる構成。
-     * 通知アクセスか発信リダイレクトが無い場合は、PHONE_STATE フォールバック＋オフセット
-     * 方式（電池最適化の除外が必要）でも動く。
+     *
+     * 発信の検知は `READ_PHONE_STATE`（`CallStateReceiver` の OFFHOOK）で行う。
+     * 相手の応答は通知アクセスで検知し、通知アクセスが無い端末はオフセット方式で代替する
+     * （バックグラウンドからの起動には電池最適化の除外が必要）。
      */
     val canDetectCalls: Boolean
-        get() = phoneState && (notificationAccess || callRedirection || batteryExempt)
+        get() = phoneState && (notificationAccess || batteryExempt)
 
     val readyCount: Int
-        get() = listOf(phoneState, notifications, notificationAccess, callRedirection, batteryExempt).count { it }
+        get() = listOf(phoneState, notifications, notificationAccess, batteryExempt).count { it }
 }

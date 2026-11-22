@@ -9,16 +9,18 @@ import android.provider.Settings
 /** システム設定画面への導線。ガイド画面・権限カードから使う。 */
 object SystemIntents {
 
-    /** 電池の最適化から外す（ColorOS では「制限なし」に相当）。 */
+    /**
+     * 電池の最適化の設定画面を開く（ColorOS では「制限なし」に相当）。
+     *
+     * 除外を直接お願いする [`Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`] は
+     * `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` 権限が必要なので使わない。端末の設定画面を開き、
+     * ユーザーが「制限なし（最適化しない）」を選ぶ。状態の確認だけなら権限は要らない。
+     */
     fun openBatterySettings(context: Context) {
-        val packageUri = Uri.parse("package:${context.packageName}")
-        val direct = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, packageUri)
+        val direct = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { context.startActivity(direct) }.recoverCatching {
-            context.startActivity(
-                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
+            openAppDetails(context)
         }
     }
 

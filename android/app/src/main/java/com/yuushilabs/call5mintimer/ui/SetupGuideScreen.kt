@@ -38,7 +38,6 @@ fun SetupGuideScreen(
     onRequestPhoneState: () -> Unit,
     onRequestNotifications: () -> Unit,
     onOpenNotificationAccess: () -> Unit,
-    onRequestCallRedirection: () -> Unit,
 ) {
     val context = LocalContext.current
     LazyColumn(
@@ -58,7 +57,7 @@ fun SetupGuideScreen(
                 number = 1,
                 title = "電話の状態",
                 granted = permissions.phoneState,
-                body = "発信・終話を読むための権限です。許可しないと終話で止まれません。",
+                body = "発信・終話を読むための権限です。発信（相手を呼び出した）と終話（通話が終わった）の検知に使います。",
                 actionLabel = "許可する",
                 onAction = onRequestPhoneState,
             )
@@ -86,16 +85,6 @@ fun SetupGuideScreen(
         item {
             GuideStep(
                 number = 4,
-                title = "発信リダイレクト",
-                granted = permissions.callRedirection,
-                body = "発信の瞬間にアプリを起動します。迷惑電話対策（CallScreeningService）とは別の枠なので、電話帳ナビの設定は変更不要です。",
-                actionLabel = "設定を開く",
-                onAction = onRequestCallRedirection,
-            )
-        }
-        item {
-            GuideStep(
-                number = 5,
                 title = "電池の最適化を除外",
                 granted = permissions.batteryExempt,
                 body = "画面消灯中・アプリがバックグラウンドでも発信時に起動できるようにします（OPPO では「制限なし」に相当）。「オフセット」方式で計測するには必須です。",
@@ -141,7 +130,7 @@ fun SetupGuideScreen(
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("うまく動かないとき", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "・発信しても起動しない → 「発信リダイレクト」か「電池の最適化を除外」を設定\n" +
+                        "・発信しても起動しない → 「電池の最適化を除外」と「自動起動」を設定\n" +
                             "・相手が出てもカウントが始まらない → 通知アクセスを許可するか、計測開始を「オフセット」に変更\n" +
                             "・オフセット方式で計測が始まらない → 電池の最適化を除外する（バックグラウンド起動の制限のため）\n" +
                             "・終話しても通知が消えない → 電話の状態を許可する\n" +

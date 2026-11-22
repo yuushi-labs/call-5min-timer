@@ -87,8 +87,6 @@ class CallTimerViewModel(application: Application) : AndroidViewModel(applicatio
             phoneState = PermissionState.hasReadPhoneState(context),
             notifications = PermissionState.hasPostNotifications(context),
             notificationAccess = PermissionState.hasNotificationAccess(context),
-            callRedirection = PermissionState.hasCallRedirectionRole(context),
-            installPackages = PermissionState.hasInstallPackages(context),
             batteryExempt = PermissionState.isBatteryOptimizationExempt(context),
         )
     }

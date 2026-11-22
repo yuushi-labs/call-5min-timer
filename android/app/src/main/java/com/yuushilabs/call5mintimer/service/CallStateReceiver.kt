@@ -7,7 +7,7 @@ import android.telephony.TelephonyManager
 import android.util.Log
 
 /**
- * CallRedirectionService を使えない場合の補助。
+ * 発信と終話の検知。
  *
  * PHONE_STATE から発信相当（RINGING を経ない OFFHOOK）を拾い、終話（IDLE）で止める。
  * 着信は RINGING → OFFHOOK の順になるので、直前が RINGING なら発信とみなさない。

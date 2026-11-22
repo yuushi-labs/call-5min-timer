@@ -91,24 +91,25 @@ object CallNotificationParser {
         val combined = list(snapshot.title, snapshot.text, snapshot.bigText, snapshot.subText)
         val lower = combined.lowercase()
 
-        // 1. クロノメーターが動いていれば、相手が出て計測が始まっている。
-        if (snapshot.chronometerRunning && snapshot.postedWhenMillis > 0L) {
-            return CallNotificationState.ACTIVE
-        }
-
-        // 2. 着信。連絡先名や本文に「Calling〜」「On Call〜」のような語が混ざっていても
+        // 1. 着信。連絡先名や本文に「Calling〜」「On Call〜」のような語が混ざっていても
         //    着信を優先する（発信・通話中の判定はこの後）。
         if (INCOMING_MARKERS.any { lower.contains(it) }) return CallNotificationState.INCOMING
 
-        // 3. 「通話中」の文言（クロノメーター非対応の端末・通話アプリ向け）。
+        // 2. 発信して呼び出し中。OPPO（ColorOS）の通話通知は「発信中」のまま
+        //    `showChronometer` を立てたり 00:00 の経過表示を出したりするため、
+        //    クロノメーターや時刻表示だけでは相手が応答したと判断できない。
+        //    「発信中」の文言がある間は、必ず DIALING のままにして計測を始めない。
+        if (DIALING_MARKERS.any { lower.contains(it) }) return CallNotificationState.DIALING
+
+        // 3. 「通話中」の文言（相手が出たあとの通知）。
         if (ACTIVE_MARKERS.any { lower.contains(it) }) return CallNotificationState.ACTIVE
 
-        // 4. 経過表示（00:00 など）は着信文言が無い場合だけ通話中とみなす。
+        // 4. 文言が無い端末・通話アプリ向け。クロノメーターが動いている、または経過表示がある。
+        if (snapshot.chronometerRunning && snapshot.postedWhenMillis > 0L) {
+            return CallNotificationState.ACTIVE
+        }
         val elapsed = parseElapsedSeconds(combined)
         if (elapsed != null) return CallNotificationState.ACTIVE
-
-        // 5. 呼び出し中の文言。
-        if (DIALING_MARKERS.any { lower.contains(it) }) return CallNotificationState.DIALING
 
         return CallNotificationState.UNKNOWN_CALL
     }
