@@ -31,7 +31,11 @@ class CallStateReceiver : BroadcastReceiver() {
             TelephonyManager.EXTRA_STATE_OFFHOOK -> {
                 val previous = preferences.getString(KEY_LAST_STATE, null)
                 preferences.edit().putString(KEY_LAST_STATE, state).apply()
-                val looksOutgoing = previous != TelephonyManager.EXTRA_STATE_RINGING
+                // 発信とみなすのは、直前が待機（IDLE）または未記録のときだけ。
+                // 直前が RINGING なら着信の応答、OFFHOOK なら同じ通話の重複通知なので、
+                // 発信の記録もサービス起動もしない（着信応答を発信と誤認しない）。
+                val looksOutgoing = previous == null ||
+                    previous == TelephonyManager.EXTRA_STATE_IDLE
                 if (looksOutgoing) {
                     Log.i(TAG, "OFFHOOK without RINGING: treating as outgoing call")
                     // サービスを起動できたかどうかに関係なく「発信」を記録する。
