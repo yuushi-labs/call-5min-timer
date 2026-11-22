@@ -65,7 +65,6 @@ fun HomeScreen(
     onRequestPhoneState: () -> Unit,
     onRequestNotifications: () -> Unit,
     onOpenNotificationAccess: () -> Unit,
-    onRequestCallRedirection: () -> Unit,
     onOpenBatterySettings: () -> Unit,
     onSetStartMode: (StartMode) -> Unit,
     onSetOffsetSeconds: (Int) -> Unit,
@@ -102,7 +101,6 @@ fun HomeScreen(
                 onRequestPhoneState = onRequestPhoneState,
                 onRequestNotifications = onRequestNotifications,
                 onOpenNotificationAccess = onOpenNotificationAccess,
-                onRequestCallRedirection = onRequestCallRedirection,
                 onOpenBatterySettings = onOpenBatterySettings,
             )
         }
@@ -220,11 +218,10 @@ private fun PermissionsCard(
     onRequestPhoneState: () -> Unit,
     onRequestNotifications: () -> Unit,
     onOpenNotificationAccess: () -> Unit,
-    onRequestCallRedirection: () -> Unit,
     onOpenBatterySettings: () -> Unit,
 ) {
     SectionCard(
-        title = "動作に必要な設定（${permissions.readyCount}/5）",
+        title = "動作に必要な設定（${permissions.readyCount}/4）",
         subtitle = "発信を通話アプリの通知からも拾うため、通知へのアクセスを推奨します。",
     ) {
         PermissionRow("電話の状態", "発信・終話の検知", permissions.phoneState, "許可", onRequestPhoneState)
@@ -235,13 +232,6 @@ private fun PermissionsCard(
             permissions.notificationAccess,
             "設定",
             onOpenNotificationAccess,
-        )
-        PermissionRow(
-            "発信リダイレクト",
-            "発信の瞬間に起動（迷惑電話対策とは別枠）",
-            permissions.callRedirection,
-            "設定",
-            onRequestCallRedirection,
         )
         PermissionRow(
             "電池の最適化を除外",
@@ -255,7 +245,7 @@ private fun PermissionsCard(
         }
         if (!permissions.canDetectCalls) {
             Text(
-                "電話の状態に加えて、通知へのアクセス・発信リダイレクト・電池最適化の除外のどれかが必要です" +
+                "電話の状態に加えて、通知へのアクセスか電池最適化の除外が必要です" +
                     "（電池最適化だけなら「オフセット」方式で動きます）。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,

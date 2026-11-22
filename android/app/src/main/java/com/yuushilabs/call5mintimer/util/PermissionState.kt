@@ -1,7 +1,6 @@
 package com.yuushilabs.call5mintimer.util
 
 import android.app.NotificationManager
-import android.app.role.RoleManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
@@ -28,15 +27,6 @@ object PermissionState {
     /** 通知へのアクセス（NotificationListenerService）。 */
     fun hasNotificationAccess(context: Context): Boolean =
         NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
-
-    /** 発信リダイレクトの役割（電話帳ナビの迷惑電話枠とは別）。 */
-    fun hasCallRedirectionRole(context: Context): Boolean {
-        val roleManager = context.getSystemService(RoleManager::class.java) ?: return false
-        return roleManager.isRoleHeld(RoleManager.ROLE_CALL_REDIRECTION)
-    }
-
-    fun hasInstallPackages(context: Context): Boolean =
-        context.packageManager.canRequestPackageInstalls()
 
     /** 電池の最適化の除外（バックグラウンド起動の前提）。 */
     fun isBatteryOptimizationExempt(context: Context): Boolean {

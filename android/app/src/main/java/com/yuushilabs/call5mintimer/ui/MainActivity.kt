@@ -1,7 +1,6 @@
 package com.yuushilabs.call5mintimer.ui
 
 import android.Manifest
-import android.app.role.RoleManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -82,17 +81,6 @@ private fun CallTimerApp(viewModel: CallTimerViewModel = viewModel()) {
     val notificationsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { viewModel.refreshPermissions() }
-    val roleLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) { viewModel.refreshPermissions() }
-
-    val requestCallRedirection: () -> Unit = {
-        val roleManager = context.getSystemService(RoleManager::class.java)
-        val intent = roleManager?.createRequestRoleIntent(RoleManager.ROLE_CALL_REDIRECTION)
-        if (intent != null) {
-            runCatching { roleLauncher.launch(intent) }
-        }
-    }
 
     Scaffold(
         topBar = {
@@ -135,7 +123,6 @@ private fun CallTimerApp(viewModel: CallTimerViewModel = viewModel()) {
                         com.yuushilabs.call5mintimer.util.SystemIntents.openNotificationAccess(context)
                     }
                 },
-                onRequestCallRedirection = requestCallRedirection,
                 onOpenBatterySettings = {
                     com.yuushilabs.call5mintimer.util.SystemIntents.openBatterySettings(context)
                 },
@@ -176,7 +163,6 @@ private fun CallTimerApp(viewModel: CallTimerViewModel = viewModel()) {
                         com.yuushilabs.call5mintimer.util.SystemIntents.openNotificationAccess(context)
                     }
                 },
-                onRequestCallRedirection = requestCallRedirection,
             )
         }
     }

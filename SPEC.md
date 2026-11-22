@@ -24,16 +24,16 @@ ahamo などの「1回5分以内の国内通話無料」プランでは、通話
 Android の一般アプリはシステム権限（`PRECISE_CALL_STATE` 等）を持たないため、「発信開始（ダイヤル）」と「相手が受話した瞬間（通話開始）」を直接 Telephony API だけで区別できない。そこで本アプリでは以下の 2 段階検知を採用する。
 
 1. **発信トリガー（発信通話の識別 & 起動）**
-   - **方法 A（推奨）：`CallRedirectionService`（Android 10 / API 29+）**
-     - `CallScreeningService`（電話帳ナビ等）とは別枠の OS 役割であり競合しない。
-     - 発信が行われた瞬間に OS がアプリを起こし、「今回の通話は発信である」フラグと通話監視用 `ForegroundService` を起動する（発信先番号の改変やブロックは一切行わずそのまま通す）。
-   - **方法 B（補助・フォールバック）：`READ_PHONE_STATE`（`TelephonyCallback`）**
-     - `CallRedirectionService` が使えない端末／条件向けに、`RINGING` を経由せず `OFFHOOK` になった場合を発信相当として扱う補助判定を用意する。
+   - **主方式：`READ_PHONE_STATE`（`CallStateReceiver`）**
+     - `RINGING` を経由せず `OFFHOOK` になった場合を発信相当として扱い、通話監視用 `ForegroundService` を起動する（着信は `RINGING` → `OFFHOOK` の順になるので区別できる）。
+     - バックグラウンド起動のため、Android 12+ の前面サービス起動制限を避ける前提として「電池最適化の除外」を必要とする（無い場合は UI に警告）。
+     - 発信リダイレクト・端末の発信者番号補助などの役割（ロール）は取得しない（権限を最小に保つため。`CallScreeningService` とも競合しない）。
 
 2. **相手応答（00:00 計測開始）の検知**
    - **主要方式：`NotificationListenerService` による進行中通話通知の監視**
      - 通話アプリ（OPPO 標準ダイヤラー、Google 電話アプリ等）が出す進行中通話通知を監視する。
-     - 呼び出し中（「発信中」「Calling」「ダイヤル中」など、経過時間 `Chronometer` が動いていない状態）から、相手が応答して **通話開始（経過タイマー `00:00` や「通話中」表示、`Notification.extras` の `when` / `usesChronometer` 開始）** に切り替わった瞬間を検知し、タイマーを `0` 秒からスタートする。
+     - 呼び出し中（「発信中」「Calling」「ダイヤル中」など）から、相手が応答して **通話開始（経過タイマー `00:00` や「通話中」表示、`Notification.extras` の `when` / `usesChronometer` 開始）** に切り替わった瞬間を検知し、タイマーを `0` 秒からスタートする。
+     - **重要**：OPPO（ColorOS）の通話通知は「発信中」のまま `showChronometer` を立てたり `00:00` を出したりする。そのため判定は「着信 → 発信中の文言 → 通話中の文言 → クロノメーター/経過表示」の順に行い、発信中の文言がある間は `DIALING` としてカウントを始めない（`CallNotificationParser`）。
    - **フォールバック方式（任意切替）**
      - 通知アクセス未許可、または端末・通話アプリのアップデートで通知形式が読めない場合に備え、「発信開始（`OFFHOOK`）＋接続猶予オフセット（初期値 5 秒、設定変更可）」で開始するモードも設定で選べるようにする。
 
@@ -89,8 +89,8 @@ Android の一般アプリはシステム権限（`PRECISE_CALL_STATE` 等）を
 1. **必要な権限・役割のガイド**
    - 電話の状態読み取り（`READ_PHONE_STATE`）
    - 通知へのアクセス（`NotificationListenerService` — 相手応答検知用）
-   - 発信リダイレクトアプリ設定（`CallRedirectionService` — 電話帳ナビの迷惑電話枠とは別枠）
    - 通知の表示（Android 13+ `POST_NOTIFICATIONS`）
+   - 電池の最適化の除外（設定画面への導線。除外の直接依頼は権限を要するため行わない）
 2. **ColorOS 固有の設定案内（診断チェック付き）**
    - バッテリー最適化の除外（「制限なし」/ 最適化しない）
    - 自動起動（バックグラウンド起動許可）の案内（設定画面への導線）
@@ -104,6 +104,7 @@ Android の一般アプリはシステム権限（`PRECISE_CALL_STATE` 等）を
    - `https://api.github.com/repos/yuushi-labs/call-5min-timer/releases/latest` を参照し、現在の `versionName` / `versionCode` より新しいリリース（`call-5min-timer-v*.apk`）があるか確認する。
    - ETag（`If-None-Match` / `304 Not Modified`）とデバウンス制御で無駄な通信を抑える。
    - アプリ内に「新しいバージョンがあります」バナーおよび手動チェックボタンを配置し、ダウンロード進捗表示 → `FileProvider` 経由で Android パッケージインストーラを起動 → 古いダウンロード済み APK を自動削除する。
+   - `REQUEST_INSTALL_PACKAGES` はこの自分自身の更新だけに使い、電池最適化の変更要求（`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`）や発信リダイレクトの役割は取らない。
 2. **固定配布署名鍵（上書き更新互換）**
    - 毎回の Release で上書きインストールできるよう、リポジトリ内（`android/keystore/` 等）の固定配布用署名鍵（または CI Secrets）で Release APK に署名する。
 
@@ -114,7 +115,7 @@ Android の一般アプリはシステム権限（`PRECISE_CALL_STATE` 等）を
 - **言語 / UI**：Kotlin / Jetpack Compose / Material 3
 - **非同期・状態管理**：Kotlin Coroutines / `StateFlow`
 - **設定永続化**：Jetpack DataStore（JSON または Proto で通知ルール一覧を保存）
-- **最小 / ターゲット SDK**：`minSdk = 29`（Android 10、`CallRedirectionService` 対応）/ `targetSdk = 35`
+- **最小 / ターゲット SDK**：`minSdk = 29`（Android 10）/ `targetSdk = 35`
 
 ### モジュール構成（予定）
 
@@ -125,8 +126,7 @@ app/src/main/java/com/yuushilabs/call5mintimer/
 │   ├── NotificationRule.kt       # 定期ルール / スポットルール / バイブ・音設定モデル
 │   └── CallNotificationParser.kt # 通話アプリの通知から「呼び出し中 / 通話開始」を判定
 ├── service/
-│   ├── OutgoingCallRedirectionService.kt # 発信検知トリガー
-│   ├── CallStateReceiver.kt              # 終話(IDLE) / フォールバック検知
+│   ├── CallStateReceiver.kt              # 発信（OFFHOOK）/ 終話（IDLE）検知
 │   ├── CallNotificationListener.kt       # 相手応答(00:00)検知
 │   ├── CallTimerForegroundService.kt     # 通話中のみ動作するタイマー本体
 │   └── AlertDispatcher.kt                # VibratorManager / 通知音 / 通知発行
@@ -148,6 +148,8 @@ app/src/main/java/com/yuushilabs/call5mintimer/
   - カスタムルール（任意間隔、重複時刻、ON/OFF 切替）の境界値テスト
 - `CallNotificationParser`：
   - OPPO 標準ダイヤラー／Google 電話アプリの「発信中」「呼び出し中」「00:00」「通話中」通知パターンのモック判定テスト
+  - 「発信中」＋ `showChronometer=true` ＋ `00:00` 表示でも `DIALING`（カウントしない）こと、
+    「発信中」から「通話中」に切り替わったら `ACTIVE` になること
 
 ### 実機検証（OPPO / ColorOS）
 - 電話帳ナビが有効な状態で発信し、競合せず起動すること

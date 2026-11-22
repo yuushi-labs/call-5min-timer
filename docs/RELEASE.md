@@ -1,4 +1,4 @@
-# リリース手順（v0.1.0 以降）
+# リリース手順（v0.1.1 以降）
 
 1. `android/app/build.gradle.kts` の `versionCode` / `versionName` を上げる
 2. テスト・Lint・署名付き APK を作る
@@ -14,11 +14,11 @@
 
    ```bash
    gh api -X POST /repos/yuushi-labs/call-5min-timer/releases \
-     -f tag_name=v0.1.0 \
-     -f name="v0.1.0" \
+     -f tag_name=v0.1.1 \
+     -f name="v0.1.1" \
      -f body="$(cat release-notes.md)" \
      -F draft=false -F prerelease=false
-   gh release upload v0.1.0 call-5min-timer-v0.1.0.apk
+   gh release upload v0.1.1 call-5min-timer-v0.1.1.apk
    ```
 
 4. リリース本文に `versionCode: <n>` を書く。アプリ内アップデートはタグと本文の

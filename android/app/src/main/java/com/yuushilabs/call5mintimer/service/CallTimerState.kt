@@ -15,7 +15,11 @@ object CallTimerState {
     /** 現在のセッションの識別子（開始時刻）。終話・再開の取り違え防止に使う。 */
     val sessionId = MutableStateFlow(0L)
 
-    /** PHONE_STATE フォールバックで「発信」と判定済み（リスナーの sawDialing と同じ役割）。 */
+    /**
+     * PHONE_STATE で「発信」と判定済み（リスナーの sawDialing と同じ役割）。
+     * サービスを起動できなかった場合も発信の事実は残す（通知リスナーが最初から
+     * ACTIVE の通知を見たときに応答で計測を始められるように）。
+     */
     val detectedOutgoing = MutableStateFlow(false)
 
     /** 電池最適化の除外が無く、バックグラウンドからの起動を断念した。 */

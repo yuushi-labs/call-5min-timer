@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- 発信・終話の検知（読み取りのみ。通話内容や番号は保存しない）。 -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
@@ -12,24 +11,9 @@
     <!-- 画面消灯中も予定時刻の合図を鳴らすための CPU 保持。 -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
-    <!-- OPPO（ColorOS）の電池最適化から外す設定画面へ直接移動するため。 -->
-    <uses-permission
-        android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
-        tools:ignore="BatteryLife" />
     <!-- アプリ内アップデート（GitHub Releases の確認と APK のダウンロード）だけに使う。 -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-
-    <!-- 通話アプリの通知を読む（相手応答の検知）。BIND はサービス側で宣言する。 -->
-    <queries>
-        <package android:name="com.android.dialer" />
-        <package android:name="com.google.android.dialer" />
-        <package android:name="com.android.phone" />
-        <package android:name="com.oppo.dialer" />
-        <package android:name="com.coloros.dialer" />
-        <package android:name="com.oplus.dialer" />
-        <package android:name="com.android.incallui" />
-    </queries>
 
     <application
         android:name=".CallTimerApplication"
@@ -58,16 +42,6 @@
             </intent-filter>
         </activity>
 
-        <!-- 発信の瞬間に OS から起動される（電話帳ナビの CallScreeningService とは別枠）。 -->
-        <service
-            android:name=".service.OutgoingCallRedirectionService"
-            android:exported="true"
-            android:permission="android.permission.BIND_CALL_REDIRECTION_SERVICE">
-            <intent-filter>
-                <action android:name="android.telecom.CallRedirectionService" />
-            </intent-filter>
-        </service>
-
         <!-- 相手が出た瞬間（進行中通話通知の 00:00 化）を検知する。 -->
         <service
             android:name=".service.CallNotificationListener"
@@ -88,7 +62,7 @@
                 android:value="Ticks the 5-minute outgoing-call timer only while a call is in progress" />
         </service>
 
-        <!-- CallRedirectionService を使えない場合の補助（OFFHOOK = 発信相当 / IDLE = 終話）。 -->
+        <!-- 発信（RINGING を経ない OFFHOOK）と終話（IDLE）の検知。 -->
         <receiver
             android:name=".service.CallStateReceiver"
             android:exported="true">

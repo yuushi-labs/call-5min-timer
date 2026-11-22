@@ -40,6 +40,10 @@ data class CallNotificationSnapshot(
  *
  * 端末や通話アプリによって通知の文言が違うため、文言・カテゴリ・クロノメーターを
  * 組み合わせて判定する。判定はすべて文字列だけで完結する。
+ *
+ * 通知の各欄には状態の文言（「発信中」「通話中」など）と連絡先名のどちらも入りうる。
+ * 連絡先名に `Calling office` や `On Call Support` のような語が含まれても取り違えないよう、
+ * 「はっきりした発信語」「はっきりした通話中の語」「どちらにも見える語」を分けて判定する。
  */
 object CallNotificationParser {
 
@@ -57,19 +61,37 @@ object CallNotificationParser {
         "com.android.server.telecom",
     )
 
-    private val DIALING_MARKERS = listOf(
-        "発信中", "発信", "呼び出し中", "呼び出し", "ダイヤル中", "ダイヤル",
+    /** 状態を表す発信語（連絡先名にはまず現れない）。 */
+    private val EXPLICIT_DIALING_MARKERS = listOf(
+        "発信中", "発信", "呼び出し中", "呼び出し", "ダイヤル中",
         "接続中", "応答待ち",
-        "calling", "dialing", "dialling", "outgoing", "connecting",
+        "dialing", "dialling", "outgoing", "connecting",
     )
 
-    private val ACTIVE_MARKERS = listOf(
-        "通話中", "通話中…", "通話中...", "in call", "ongoing call", "on call", "active call",
+    /** 連絡先名にも現れうる発信語。状態の欄でだけ、通話中の手がかりより優先する。 */
+    private val AMBIGUOUS_DIALING_MARKERS = listOf("ダイヤル", "calling")
+
+    /** 通話中の状態を表すはっきりした語。 */
+    private val STRONG_ACTIVE_MARKERS = listOf("通話中")
+
+    /** 通話中の状態にも連絡先名にも見える語。 */
+    private val AMBIGUOUS_ACTIVE_MARKERS = listOf(
+        "in call", "ongoing call", "on call", "active call",
     )
 
-    private val INCOMING_MARKERS = listOf(
-        "着信中", "着信", "受話", "incoming", "incoming call", "ringing",
+    private val EXPLICIT_INCOMING_MARKERS = listOf(
+        "着信中", "着信", "受話", "incoming", "incoming call",
     )
+
+    /** 連絡先名にも見える着信の語（`Stringing Service` など）。 */
+    private val AMBIGUOUS_INCOMING_MARKERS = listOf("ringing")
+
+    /**
+     * 欄全体が `Ringing`（末尾の「…」や空白を含む）のときだけ着信とみなす。
+     * 着信通知はタイトルが連絡先名でも、本文が `Ringing…` だけになることがある。
+     * 部分一致だと `Stringing Service` のような連絡先名まで着信になるため、全体一致にする。
+     */
+    private val RINGING_FIELD = Regex("""^\s*ringing[\s.…]*$""", RegexOption.IGNORE_CASE)
 
     /** `00:00` / `1:23` / `1:02:03` のような経過表示。 */
     private val CLOCK_PATTERN = Regex("""(?<!\d)(\d{1,2}):(\d{2})(?::(\d{2}))?(?!\d)""")
@@ -90,28 +112,58 @@ object CallNotificationParser {
 
         val combined = list(snapshot.title, snapshot.text, snapshot.bigText, snapshot.subText)
         val lower = combined.lowercase()
+        // 状態を表す欄（タイトル・サブテキスト）と、連絡先名が入りうる本文を分けて考える。
+        val status = list(snapshot.title, snapshot.subText).lowercase()
 
-        // 1. クロノメーターが動いていれば、相手が出て計測が始まっている。
+        // 1. 着信。状態の欄の「着信中」「Incoming call」を最優先する。
+        if (EXPLICIT_INCOMING_MARKERS.any { status.contains(it) }) return CallNotificationState.INCOMING
+
+        // 2. 本文にしか無くても、はっきりした着信語なら着信。
+        if (EXPLICIT_INCOMING_MARKERS.any { lower.contains(it) }) return CallNotificationState.INCOMING
+
+        // 3. 「発信中」「呼び出し中」など、はっきりした発信語。OPPO（ColorOS）は発信中のまま
+        //    `showChronometer` や 00:00 を出すため、ここではクロノメーターや時刻を見ない。
+        //    連絡先名の「On Call Support」のような通話中らしい語より優先する。
+        if (EXPLICIT_DIALING_MARKERS.any { lower.contains(it) }) return CallNotificationState.DIALING
+
+        // 4. 状態の欄が「通話中」なら、本文に連絡先名（Calling office など）があっても通話中。
+        if (STRONG_ACTIVE_MARKERS.any { status.contains(it) }) return CallNotificationState.ACTIVE
+
+        // 5. 本文の「通話中」も、曖昧な発信語（Calling… / ダイヤル）より先に通話中とみなす。
+        if (STRONG_ACTIVE_MARKERS.any { lower.contains(it) }) return CallNotificationState.ACTIVE
+
+        // 6. 文言が無い端末・通話アプリ向け。クロノメーターが動いている、または経過表示がある。
         if (snapshot.chronometerRunning && snapshot.postedWhenMillis > 0L) {
             return CallNotificationState.ACTIVE
         }
+        if (parseElapsedSeconds(combined) != null) return CallNotificationState.ACTIVE
 
-        // 2. 着信。連絡先名や本文に「Calling〜」「On Call〜」のような語が混ざっていても
-        //    着信を優先する（発信・通話中の判定はこの後）。
-        if (INCOMING_MARKERS.any { lower.contains(it) }) return CallNotificationState.INCOMING
+        // 7. 欄全体が `Ringing…` なら着信（タイトルが連絡先名でも）。
+        //    部分一致にすると `Stringing Service` のような連絡先名まで着信になるため、
+        //    全体一致だけを、曖昧な発信語より先に見る。
+        if (hasRingingField(snapshot)) return CallNotificationState.INCOMING
 
-        // 3. 「通話中」の文言（クロノメーター非対応の端末・通話アプリ向け）。
-        if (ACTIVE_MARKERS.any { lower.contains(it) }) return CallNotificationState.ACTIVE
+        // 8. 状態の欄が「Ringing」などなら着信。
+        if (AMBIGUOUS_INCOMING_MARKERS.any { status.contains(it) }) return CallNotificationState.INCOMING
 
-        // 4. 経過表示（00:00 など）は着信文言が無い場合だけ通話中とみなす。
-        val elapsed = parseElapsedSeconds(combined)
-        if (elapsed != null) return CallNotificationState.ACTIVE
+        // 9. 状態の欄が「Calling…」「ダイヤル中」などなら呼び出し中。
+        if (AMBIGUOUS_DIALING_MARKERS.any { status.contains(it) }) return CallNotificationState.DIALING
 
-        // 5. 呼び出し中の文言。
-        if (DIALING_MARKERS.any { lower.contains(it) }) return CallNotificationState.DIALING
+        // 10. 本文にしか無い紛らわしい発信語（連絡先名の可能性がある）。
+        if (AMBIGUOUS_DIALING_MARKERS.any { lower.contains(it) }) return CallNotificationState.DIALING
+
+        // 11. 本文にしか無い紛らわしい着信の語（Stringing Service など）。
+        if (AMBIGUOUS_INCOMING_MARKERS.any { lower.contains(it) }) return CallNotificationState.INCOMING
+
+        // 12. 本文にしか無い通話中の語（In call / On Call など）。
+        if (AMBIGUOUS_ACTIVE_MARKERS.any { lower.contains(it) }) return CallNotificationState.ACTIVE
 
         return CallNotificationState.UNKNOWN_CALL
     }
+
+    private fun hasRingingField(snapshot: CallNotificationSnapshot): Boolean =
+        listOf(snapshot.title, snapshot.text, snapshot.bigText, snapshot.subText)
+            .any { RINGING_FIELD.matches(it) }
 
     /** `MM:SS` / `H:MM:SS` を秒へ。見つからなければ null。 */
     fun parseElapsedSeconds(text: String): Int? {

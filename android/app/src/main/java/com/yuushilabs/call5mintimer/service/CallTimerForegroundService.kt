@@ -34,14 +34,15 @@ import kotlinx.coroutines.launch
 /**
  * 通話中だけ動くタイマー本体。
  *
- * 発信の検知（CallRedirectionService / PHONE_STATE）で起動し、相手の応答が分かった時点
+ * 発信の検知（PHONE_STATE の OFFHOOK）で起動し、相手の応答が分かった時点
  * （or オフセット秒後）から 0 秒を数え始める。終話（CALL_STATE_IDLE）または通話通知の
  * 消滅で自分から止まり、常駐しない。
  *
  * 起動経路について:
- * - 発信リダイレクト（onPlaceCall）は通話操作中に呼ばれるので、そのまま前面サービスへ
- * - PHONE_STATE レシーバーはバックグラウンドから動くため、Android 12+ の前面サービス
+ * - 発信（`CallStateReceiver`）はバックグラウンドから動くため、Android 12+ の前面サービス
  *   起動制限を回避できる「電池最適化の除外」があるときだけ起動する（無ければ UI に警告）
+ * - 通知リスナー（`CallNotificationListener`）は通常の前面。呼び出し中に待機状態で起動し、
+ *   相手の応答（ACTIVE）で計測を始める（DIALING の間は数えない）
  */
 class CallTimerForegroundService : Service() {
 
