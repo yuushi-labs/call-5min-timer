@@ -47,17 +47,29 @@ class UpdateManager(
                 return@withContext CheckResult.Skipped
             }
             val etag = repository.updateEtag()
-            val response = client.fetchLatest(etag).getOrElse { error ->
+            var response = client.fetchLatest(etag).getOrElse { error ->
                 return@withContext CheckResult.Failed(error.message ?: "確認に失敗しました")
             }
+            if (response.notModified) {
+                // 304 は「リリース情報が前回と変わっていない」の意味で、「更新済み」ではない。
+                // 保存済みの本文で判定する。無ければ ETag を付けずに取り直す。
+                val stored = repository.lastReleaseBody()
+                response = if (stored.isNullOrBlank()) {
+                    client.fetchLatest(null).getOrElse { error ->
+                        return@withContext CheckResult.Failed(error.message ?: "確認に失敗しました")
+                    }
+                } else {
+                    ReleaseResponse(body = stored, etag = etag)
+                }
+            }
             repository.recordUpdateCheck(now)
-            if (response.notModified) return@withContext CheckResult.UpToDate
 
             val body = response.body ?: return@withContext CheckResult.Failed("空の応答")
             val release = runCatching { GithubRelease.parse(body) }.getOrElse {
                 return@withContext CheckResult.Failed("リリース情報を読めませんでした")
             }
             repository.recordUpdateEtag(response.etag)
+            repository.recordLastReleaseBody(body)
             val info = UpdateDecision.decide(
                 currentVersionName = BuildConfig.VERSION_NAME,
                 currentVersionCode = BuildConfig.VERSION_CODE,

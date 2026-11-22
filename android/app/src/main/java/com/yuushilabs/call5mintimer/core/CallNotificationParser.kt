@@ -100,14 +100,14 @@ object CallNotificationParser {
         val elapsed = parseElapsedSeconds(combined)
         if (elapsed != null) return CallNotificationState.ACTIVE
 
-        // 3. 呼び出し中の文言。
-        if (DIALING_MARKERS.any { lower.contains(it) }) return CallNotificationState.DIALING
-
-        // 4. 「通話中」の文言（クロノメーター非対応の端末・通話アプリ向け）。
+        // 2. 「通話中」の文言（クロノメーター非対応の端末・通話アプリ向け）。
         if (ACTIVE_MARKERS.any { lower.contains(it) }) return CallNotificationState.ACTIVE
 
-        // 5. 着信。
+        // 3. 着信。連絡先名や本文に「Calling〜」があっても着信を優先する。
         if (INCOMING_MARKERS.any { lower.contains(it) }) return CallNotificationState.INCOMING
+
+        // 4. 呼び出し中の文言。
+        if (DIALING_MARKERS.any { lower.contains(it) }) return CallNotificationState.DIALING
 
         return CallNotificationState.UNKNOWN_CALL
     }

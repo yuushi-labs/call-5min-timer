@@ -55,7 +55,9 @@ class CallTimerViewModel(application: Application) : AndroidViewModel(applicatio
         refreshPermissions()
         updateManager.cleanupOldApks(keep = null)
         viewModelScope.launch {
-            val current = settings.first()
+            // DataStore の実データを待ってから判定する（初期値の autoCheckUpdates=true を
+            // 信じない。OFF で保存済みなら起動時に確認しない）。
+            val current = repository.current()
             if (current.autoCheckUpdates) checkForUpdates(force = false)
         }
     }
@@ -68,6 +70,7 @@ class CallTimerViewModel(application: Application) : AndroidViewModel(applicatio
             notificationAccess = PermissionState.hasNotificationAccess(context),
             callRedirection = PermissionState.hasCallRedirectionRole(context),
             installPackages = PermissionState.hasInstallPackages(context),
+            batteryExempt = PermissionState.isBatteryOptimizationExempt(context),
         )
     }
 
@@ -180,19 +183,19 @@ class CallTimerViewModel(application: Application) : AndroidViewModel(applicatio
         alert = AlertSpec(),
     )
 
-    /** そのルールが実際に鳴る1件をプレビューする（回数増加も反映）。 */
+    /** そのルール自身の設定を鳴らす（スケジュール上の別ルールを拾わない）。 */
     fun previewRule(ruleId: String) {
         val rules = settings.value.rules
-        val engine = TimerEngine(rules, maxSeconds = 3_600)
-        val event: AlertEvent? = engine.schedule.firstOrNull { it.ruleId == ruleId }
-            ?: engine.eventsAt(0).firstOrNull()
-        if (event != null) {
-            dispatcher.dispatch(event)
-        } else {
-            val alert = rules.periodicRules.firstOrNull { it.id == ruleId }?.alert
-                ?: rules.spotRules.firstOrNull { it.id == ruleId }?.alert
-                ?: AlertSpec()
-            dispatcher.preview(alert)
+        val periodic = rules.periodicRules.firstOrNull { it.id == ruleId }
+        val spot = rules.spotRules.firstOrNull { it.id == ruleId }
+        when {
+            periodic != null -> {
+                // 回数増加が ON なら「2回目の発火」を想定して 2 回で試す。
+                val repeats = if (periodic.scaleRepeats) 2 else periodic.alert.fixedRepeatCount
+                dispatcher.preview(periodic.alert, repeats)
+            }
+
+            spot != null -> dispatcher.preview(spot.alert, spot.alert.fixedRepeatCount)
         }
     }
 

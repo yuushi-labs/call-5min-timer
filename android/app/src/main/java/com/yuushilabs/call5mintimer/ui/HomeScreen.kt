@@ -65,6 +65,7 @@ fun HomeScreen(
     onRequestNotifications: () -> Unit,
     onOpenNotificationAccess: () -> Unit,
     onRequestCallRedirection: () -> Unit,
+    onOpenBatterySettings: () -> Unit,
     onSetStartMode: (StartMode) -> Unit,
     onSetOffsetSeconds: (Int) -> Unit,
     onSetShowElapsed: (Boolean) -> Unit,
@@ -101,6 +102,7 @@ fun HomeScreen(
                 onRequestNotifications = onRequestNotifications,
                 onOpenNotificationAccess = onOpenNotificationAccess,
                 onRequestCallRedirection = onRequestCallRedirection,
+                onOpenBatterySettings = onOpenBatterySettings,
             )
         }
         item {
@@ -210,9 +212,10 @@ private fun PermissionsCard(
     onRequestNotifications: () -> Unit,
     onOpenNotificationAccess: () -> Unit,
     onRequestCallRedirection: () -> Unit,
+    onOpenBatterySettings: () -> Unit,
 ) {
     SectionCard(
-        title = "動作に必要な設定（${permissions.readyCount}/4）",
+        title = "動作に必要な設定（${permissions.readyCount}/5）",
         subtitle = "発信を通話アプリの通知からも拾うため、通知へのアクセスを推奨します。",
     ) {
         PermissionRow("電話の状態", "発信・終話の検知", permissions.phoneState, "許可", onRequestPhoneState)
@@ -231,12 +234,20 @@ private fun PermissionsCard(
             "設定",
             onRequestCallRedirection,
         )
+        PermissionRow(
+            "電池の最適化を除外",
+            "画面消灯・バックグラウンドでも起動させる",
+            permissions.batteryExempt,
+            "設定",
+            onOpenBatterySettings,
+        )
         OutlinedButton(onClick = onOpenGuide, modifier = Modifier.fillMaxWidth()) {
             Text("OPPO（ColorOS）向けの設定ガイドを開く")
         }
         if (!permissions.canDetectCalls) {
             Text(
-                "電話の状態と、通知アクセスまたは発信リダイレクトのどちらかが必要です。オフセット方式なら通知アクセスは不要です。",
+                "電話の状態に加えて、通知へのアクセス・発信リダイレクト・電池最適化の除外のどれかが必要です" +
+                    "（電池最適化だけなら「オフセット」方式で動きます）。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )

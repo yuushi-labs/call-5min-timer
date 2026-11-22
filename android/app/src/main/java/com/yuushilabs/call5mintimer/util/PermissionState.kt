@@ -38,6 +38,12 @@ object PermissionState {
     fun hasInstallPackages(context: Context): Boolean =
         context.packageManager.canRequestPackageInstalls()
 
+    /** 電池の最適化の除外（バックグラウンド起動の前提）。 */
+    fun isBatteryOptimizationExempt(context: Context): Boolean {
+        val power = context.getSystemService(android.os.PowerManager::class.java) ?: return false
+        return power.isIgnoringBatteryOptimizations(context.packageName)
+    }
+
     fun notificationChannelsBlocked(context: Context): Boolean {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return false
         return manager.areNotificationsEnabled().not()

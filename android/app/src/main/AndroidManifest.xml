@@ -9,6 +9,8 @@
     <!-- 通話中だけ動く前面サービス。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- 画面消灯中も予定時刻の合図を鳴らすための CPU 保持。 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- OPPO（ColorOS）の電池最適化から外す設定画面へ直接移動するため。 -->
     <uses-permission

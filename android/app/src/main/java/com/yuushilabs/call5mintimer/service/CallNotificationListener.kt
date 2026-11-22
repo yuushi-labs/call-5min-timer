@@ -35,12 +35,15 @@ class CallNotificationListener : NotificationListenerService() {
                 incomingCall = false
                 sawDialing = true
                 if (!CallTimerState.running.value) {
-                    CallTimerForegroundService.start(this)
+                    CallTimerForegroundService.start(this, fromBackground = false)
                 }
             }
 
             CallNotificationState.ACTIVE -> {
-                if (sawDialing && !incomingCall) {
+                // 発信と分かっている通話（リスナーで呼び出し中を拾った、または
+                // PHONE_STATE フォールバックが発信と判定してサービスを起こした）で、
+                // まだ数え始めていないなら、ここが相手の応答（00:00）。
+                if (!incomingCall && (sawDialing || CallTimerState.detectedOutgoing.value)) {
                     CallTimerForegroundService.notifyConnected(this)
                 }
             }
@@ -48,6 +51,7 @@ class CallNotificationListener : NotificationListenerService() {
             CallNotificationState.INCOMING -> {
                 incomingCall = true
                 sawDialing = false
+                CallTimerState.detectedOutgoing.value = false
             }
 
             CallNotificationState.NONE, CallNotificationState.UNKNOWN_CALL -> Unit
@@ -56,14 +60,20 @@ class CallNotificationListener : NotificationListenerService() {
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         val snapshot = sbn?.let { toSnapshot(it) } ?: return
-        if (!CallNotificationParser.isCallApp(snapshot.packageName)) return
         val state = CallNotificationParser.parse(snapshot)
-        if (state != CallNotificationState.ACTIVE && state != CallNotificationState.DIALING) return
+        if (state != CallNotificationState.DIALING && state != CallNotificationState.ACTIVE) return
 
-        // 通話アプリは通知を消して出し直すことがあるので、少し待ってから本当の終話かを確かめる。
+        // 通話アプリは通知を消して出し直すことがあるので、少し待ってから本当の終話かを
+        // 確かめる。待っている間に次の通話へ変わっていないかは、セッション ID で確認する。
+        val notificationKey = sbn.key
+        val judgedSessionId = CallTimerState.sessionId.value
         scope.launch {
             delay(END_GRACE_MS)
-            if (!hasActiveCallNotification()) {
+            val sessionChanged = CallTimerState.sessionId.value != judgedSessionId
+            val notificationStillGone = runCatching {
+                activeNotifications.orEmpty().none { it.key == notificationKey }
+            }.getOrDefault(false)
+            if (notificationStillGone && !sessionChanged) {
                 sawDialing = false
                 incomingCall = false
                 if (CallTimerState.running.value) {
@@ -82,15 +92,6 @@ class CallNotificationListener : NotificationListenerService() {
         scope.cancel()
         super.onDestroy()
     }
-
-    private fun hasActiveCallNotification(): Boolean = runCatching {
-        activeNotifications.orEmpty().any { sbn ->
-            when (CallNotificationParser.parse(toSnapshot(sbn))) {
-                CallNotificationState.DIALING, CallNotificationState.ACTIVE -> true
-                else -> false
-            }
-        }
-    }.getOrDefault(false)
 
     private fun toSnapshot(sbn: StatusBarNotification): CallNotificationSnapshot {
         val notification: Notification = sbn.notification

@@ -22,6 +22,7 @@ object Notifications {
     const val CHANNEL_ALERTS = "alerts"
     const val STATUS_NOTIFICATION_ID = 1001
     private const val ALERT_NOTIFICATION_BASE = 2000
+    private const val ALERT_NOTIFICATION_RANGE = 1000
 
     fun createChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
@@ -78,7 +79,15 @@ object Notifications {
             .build()
     }
 
-    fun alertNotificationId(alertId: Long): Int = ALERT_NOTIFICATION_BASE + (alertId % 1000).toInt()
+    fun alertNotificationId(alertId: Long): Int = ALERT_NOTIFICATION_BASE + (alertId % ALERT_NOTIFICATION_RANGE).toInt()
+
+    /** 終話時に、このセッションで出した経過のお知らせをまとめて消す。 */
+    fun cancelAlerts(context: Context) {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        for (offset in 0 until ALERT_NOTIFICATION_RANGE) {
+            manager.cancel(ALERT_NOTIFICATION_BASE + offset)
+        }
+    }
 
     fun openAppIntent(context: Context): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {

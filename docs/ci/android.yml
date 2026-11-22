@@ -1,16 +1,7 @@
-# Android CI（配置用ワークフロー定義）
-
-GitHub App の権限に `workflows` が無いため、このファイルは `.github/workflows/android.yml` へ
-手動でコピーして使う（コピー後に `.github/workflows/` へ置いた時点で CI が動き出す）。
-
-やること:
-
-- `android/` で JVM ユニットテスト・Lint・Release APK ビルド
-- `apksigner verify` で署名を確認
-- タグ `v*` の push で GitHub Release に APK を添付（固定配布鍵で署名済み）
-
-```yaml
 name: Android CI
+
+# .github/workflows/android.yml へそのままコピーして使う純粋な YAML。
+# コピー手順と運用の説明は docs/ci/README.md を参照。
 
 on:
   push:
@@ -67,10 +58,3 @@ jobs:
         with:
           files: android/call-5min-timer-v*.apk
           generate_release_notes: true
-```
-
-## 署名について
-
-`android/keystore/call5min-timer.jks` は配布用の固定鍵で、リポジトリに置いてある。
-これはアプリの配布 ID（公開情報）であり、秘密情報ではない。**この鍵を差し替えると
-上書きインストールができなくなる**ので、CI でもローカルの Release ビルドでも同じ鍵を使う。

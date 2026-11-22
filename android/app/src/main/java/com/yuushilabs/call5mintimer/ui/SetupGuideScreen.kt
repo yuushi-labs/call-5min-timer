@@ -1,18 +1,13 @@
 package com.yuushilabs.call5mintimer.ui
 
-import android.content.ComponentName
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -30,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.yuushilabs.call5mintimer.util.SystemIntents
 
 /**
  * 権限・役割と OPPO（ColorOS）固有設定のガイド。
@@ -97,6 +93,16 @@ fun SetupGuideScreen(
                 onAction = onRequestCallRedirection,
             )
         }
+        item {
+            GuideStep(
+                number = 5,
+                title = "電池の最適化を除外",
+                granted = permissions.batteryExempt,
+                body = "画面消灯中・アプリがバックグラウンドでも発信時に起動できるようにします（OPPO では「制限なし」に相当）。「オフセット」方式で計測するには必須です。",
+                actionLabel = "設定を開く",
+                onAction = { SystemIntents.openBatterySettings(context) },
+            )
+        }
 
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -106,9 +112,9 @@ fun SetupGuideScreen(
                         "ColorOS はバックグラウンドのアプリを強く止めます。次の2つを設定すると、画面ロック中やタスクキル後でも発信時に起動しやすくなります。",
                         style = MaterialTheme.typography.bodySmall,
                     )
-                    GuideLink("電池の最適化から外す") { openBatterySettings(context) }
-                    GuideLink("自動起動を許可する") { openAutoStartSettings(context) }
-                    GuideLink("アプリ情報を開く") { openAppDetails(context) }
+                    GuideLink("電池の最適化から外す") { SystemIntents.openBatterySettings(context) }
+                    GuideLink("自動起動を許可する") { SystemIntents.openAutoStartSettings(context) }
+                    GuideLink("アプリ情報を開く") { SystemIntents.openAppDetails(context) }
                     Text(
                         "設定 > アプリ > call-5min-timer > 「電池」→「制限なし」／「自動起動」を ON。項目名は ColorOS の版によって少し異なります。",
                         style = MaterialTheme.typography.bodySmall,
@@ -135,10 +141,11 @@ fun SetupGuideScreen(
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("うまく動かないとき", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "・発信しても起動しない → 「発信リダイレクト」か「通知へのアクセス」を設定\n" +
+                        "・発信しても起動しない → 「発信リダイレクト」か「電池の最適化を除外」を設定\n" +
                             "・相手が出てもカウントが始まらない → 通知アクセスを許可するか、計測開始を「オフセット」に変更\n" +
+                            "・オフセット方式で計測が始まらない → 電池の最適化を除外する（バックグラウンド起動の制限のため）\n" +
                             "・終話しても通知が消えない → 電話の状態を許可する\n" +
-                            "・着信でも動いてしまう → 発信のみ対象です。OFFHOOK のフォールバックが誤検知した場合は通知アクセス方式に切り替えてください",
+                            "・着信でも動いてしまう → 発信のみ対象です。誤動作する場合は通知アクセス方式に切り替えてください",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -187,45 +194,4 @@ private fun GuideLink(label: String, onClick: () -> Unit) {
     TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Text(label)
     }
-}
-
-private fun openBatterySettings(context: Context) {
-    val packageUri = Uri.parse("package:${context.packageName}")
-    val direct = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, packageUri)
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    runCatching { context.startActivity(direct) }.recoverCatching {
-        context.startActivity(
-            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
-    }
-}
-
-private fun openAppDetails(context: Context) {
-    runCatching {
-        context.startActivity(
-            Intent(
-                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                Uri.parse("package:${context.packageName}"),
-            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
-    }
-}
-
-/** ColorOS の自動起動設定。端末により画面名が違うため、開けたものを使い、無ければアプリ情報へ。 */
-private fun openAutoStartSettings(context: Context) {
-    val candidates = listOf(
-        ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity"),
-        ComponentName("com.coloros.safecenter", "com.coloros.safecenter.startupapp.StartupAppListActivity"),
-        ComponentName("com.oplus.safecenter", "com.oplus.safecenter.permission.startup.StartupAppListActivity"),
-        ComponentName("com.oppo.safe", "com.oppo.safe.permission.startup.StartupAppListActivity"),
-    )
-    for (component in candidates) {
-        val intent = Intent().apply {
-            this.component = component
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        if (runCatching { context.startActivity(intent) }.isSuccess) return
-    }
-    openAppDetails(context)
 }

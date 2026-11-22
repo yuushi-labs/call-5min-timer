@@ -112,6 +112,14 @@ class CallNotificationParserTest {
     }
 
     @Test
+    fun `incoming call with dialing wording in the body is still incoming`() {
+        val state = CallNotificationParser.parse(
+            snapshot(packageName = "com.google.android.dialer", title = "Incoming call", text = "Calling office"),
+        )
+        assertEquals(CallNotificationState.INCOMING, state)
+    }
+
+    @Test
     fun `known call packages are recognised`() {
         assertEquals(true, CallNotificationParser.isCallApp("com.android.dialer"))
         assertEquals(true, CallNotificationParser.isCallApp("com.oplus.dialer"))

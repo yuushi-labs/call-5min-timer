@@ -2,10 +2,8 @@ package com.yuushilabs.call5mintimer.ui
 
 import android.Manifest
 import android.app.role.RoleManager
-import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -61,6 +59,12 @@ private fun CallTimerApp(viewModel: CallTimerViewModel = viewModel()) {
 
     var screen by remember { mutableStateOf(Screen.Home) }
     var editor by remember { mutableStateOf<RuleEditorTarget?>(null) }
+
+    // ガイド画面・編集シートではシステムの戻るでも Home / シートを閉じる。
+    androidx.activity.compose.BackHandler(enabled = editor != null) { editor = null }
+    androidx.activity.compose.BackHandler(enabled = editor == null && screen == Screen.Guide) {
+        screen = Screen.Home
+    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -126,10 +130,13 @@ private fun CallTimerApp(viewModel: CallTimerViewModel = viewModel()) {
                 },
                 onOpenNotificationAccess = {
                     runCatching {
-                        context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                        com.yuushilabs.call5mintimer.util.SystemIntents.openNotificationAccess(context)
                     }
                 },
                 onRequestCallRedirection = requestCallRedirection,
+                onOpenBatterySettings = {
+                    com.yuushilabs.call5mintimer.util.SystemIntents.openBatterySettings(context)
+                },
                 onSetStartMode = viewModel::setStartMode,
                 onSetOffsetSeconds = viewModel::setOffsetSeconds,
                 onSetShowElapsed = viewModel::setShowElapsedInNotification,
@@ -164,7 +171,7 @@ private fun CallTimerApp(viewModel: CallTimerViewModel = viewModel()) {
                 },
                 onOpenNotificationAccess = {
                     runCatching {
-                        context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                        com.yuushilabs.call5mintimer.util.SystemIntents.openNotificationAccess(context)
                     }
                 },
                 onRequestCallRedirection = requestCallRedirection,

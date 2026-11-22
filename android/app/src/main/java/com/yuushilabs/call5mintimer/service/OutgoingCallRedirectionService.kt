@@ -20,7 +20,7 @@ class OutgoingCallRedirectionService : CallRedirectionService() {
         speakerphoneOn: Boolean,
     ) {
         // タイマーの起動に失敗しても通話は必ずそのまま通す。
-        runCatching { CallTimerForegroundService.start(this) }
+        runCatching { CallTimerForegroundService.start(this, fromBackground = false) }
             .onFailure { Log.w(TAG, "timer start failed; letting the call proceed", it) }
         placeCallUnmodified()
     }

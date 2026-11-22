@@ -12,8 +12,8 @@ plugins {
  *
  * Release APK は「同じ鍵で署名されていないと上書きインストールできない」ため、
  * アプリ内アップデートで自分自身を更新できるよう、リポジトリに置いた固定の
- * 配布用鍵で毎回署名する。この鍵は配布 ID（公開情報）であり秘密情報ではない
- * （android/keystore/README.md を参照）。
+ * 配布用鍵で毎回署名する。鍵をリポジトリに置くことのリスクと前提は
+ * android/keystore/README.md を参照。
  */
 val distributionKeystore = System.getenv("CALL5_KEYSTORE_PATH")?.let { file(it) }
     ?: rootProject.file("keystore/call5min-timer.jks")
@@ -40,27 +40,19 @@ android {
     }
 
     signingConfigs {
-        getByName("debug") {
-            if (distributionKeystore.exists()) {
-                storeFile = distributionKeystore
-                storePassword = System.getenv("CALL5_KEYSTORE_PASSWORD")
-                    ?: signingProperties.getProperty("storePassword", "android")
-                keyAlias = System.getenv("CALL5_KEY_ALIAS")
-                    ?: signingProperties.getProperty("keyAlias", "call5min")
-                keyPassword = System.getenv("CALL5_KEY_PASSWORD")
-                    ?: signingProperties.getProperty("keyPassword", "android")
-            }
-        }
         create("distribution") {
-            if (distributionKeystore.exists()) {
-                storeFile = distributionKeystore
-                storePassword = System.getenv("CALL5_KEYSTORE_PASSWORD")
-                    ?: signingProperties.getProperty("storePassword", "android")
-                keyAlias = System.getenv("CALL5_KEY_ALIAS")
-                    ?: signingProperties.getProperty("keyAlias", "call5min")
-                keyPassword = System.getenv("CALL5_KEY_PASSWORD")
-                    ?: signingProperties.getProperty("keyPassword", "android")
+            // 配布鍵が無い状態で release を debug 鍵へ黙って切り替えると、配布済みアプリへの
+            // 上書き更新が壊れる。鍵が無い場合はビルドを止める（debug ビルドには影響しない）。
+            require(distributionKeystore.exists()) {
+                "配布用署名鍵が見つかりません: ${distributionKeystore.path} （android/keystore/README.md を参照）"
             }
+            storeFile = distributionKeystore
+            storePassword = System.getenv("CALL5_KEYSTORE_PASSWORD")
+                ?: signingProperties.getProperty("storePassword", "android")
+            keyAlias = System.getenv("CALL5_KEY_ALIAS")
+                ?: signingProperties.getProperty("keyAlias", "call5min")
+            keyPassword = System.getenv("CALL5_KEY_PASSWORD")
+                ?: signingProperties.getProperty("keyPassword", "android")
         }
     }
 
@@ -72,9 +64,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            signingConfig =
-                if (distributionKeystore.exists()) signingConfigs.getByName("distribution")
-                else signingConfigs.getByName("debug")
+            // 常に固定の配布鍵で署名する（debug 鍵へフォールバックしない）。
+            signingConfig = signingConfigs.getByName("distribution")
         }
     }
 

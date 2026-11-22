@@ -21,11 +21,16 @@ data class PermissionSnapshot(
     val notificationAccess: Boolean = false,
     val callRedirection: Boolean = false,
     val installPackages: Boolean = false,
+    val batteryExempt: Boolean = false,
 ) {
-    /** 発信を検知してタイマーを動かすのに最低限必要なもの。 */
+    /**
+     * 発信を検知してタイマーを動かせる構成。
+     * 通知アクセスか発信リダイレクトが無い場合は、PHONE_STATE フォールバック＋オフセット
+     * 方式（電池最適化の除外が必要）でも動く。
+     */
     val canDetectCalls: Boolean
-        get() = phoneState && (notificationAccess || callRedirection)
+        get() = phoneState && (notificationAccess || callRedirection || batteryExempt)
 
     val readyCount: Int
-        get() = listOf(phoneState, notifications, notificationAccess, callRedirection).count { it }
+        get() = listOf(phoneState, notifications, notificationAccess, callRedirection, batteryExempt).count { it }
 }

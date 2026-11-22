@@ -9,12 +9,12 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.SystemClock
 import android.telephony.PhoneStateListener
 import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
 import android.util.Log
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.yuushilabs.call5mintimer.core.TimerEngine
@@ -37,6 +37,11 @@ import kotlinx.coroutines.launch
  * 発信の検知（CallRedirectionService / PHONE_STATE）で起動し、相手の応答が分かった時点
  * （or オフセット秒後）から 0 秒を数え始める。終話（CALL_STATE_IDLE）または通話通知の
  * 消滅で自分から止まり、常駐しない。
+ *
+ * 起動経路について:
+ * - 発信リダイレクト（onPlaceCall）は通話操作中に呼ばれるので、そのまま前面サービスへ
+ * - PHONE_STATE レシーバーはバックグラウンドから動くため、Android 12+ の前面サービス
+ *   起動制限を回避できる「電池最適化の除外」があるときだけ起動する（無ければ UI に警告）
  */
 class CallTimerForegroundService : Service() {
 
@@ -49,6 +54,7 @@ class CallTimerForegroundService : Service() {
     private var tickJob: Job? = null
     private var telephonyCallback: TelephonyCallback? = null
     private var phoneStateListener: Any? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     private var foregroundStarted = false
     private var sessionInitialized = false
@@ -78,12 +84,12 @@ class CallTimerForegroundService : Service() {
 
             ACTION_CONNECTED -> {
                 pendingConnected = true
-                ensureForeground("相手の応答を検知しました")
                 if (!sessionInitialized) {
                     // 通知リスナーから直接届いた場合（発信トリガーより先）も、ここで初期化する。
                     startSession()
                 } else {
-                    startCountingIfReady(0L)
+                    ensureForeground("相手の応答を検知しました")
+                    startCounting(0L)
                 }
             }
 
@@ -98,13 +104,23 @@ class CallTimerForegroundService : Service() {
         if (sessionInitialized) return
         sessionInitialized = true
         sessionStartElapsed = SystemClock.elapsedRealtime()
-        ensureForeground("相手の応答を待っています")
+        CallTimerState.sessionId.value = sessionStartElapsed
+        CallTimerState.detectedOutgoing.value = true
+        if (!ensureForeground("相手の応答を待っています")) {
+            // 前面サービスへ昇格できない（バックグラウンド起動制限など）場合は
+            // 黙って続けず、ここで諦める。UI には電池最適化の警告を出す。
+            Log.w(TAG, "could not promote to foreground service; giving up this session")
+            CallTimerState.batteryBlocked.value = true
+            shutdown()
+            return
+        }
+        CallTimerState.batteryBlocked.value = false
         registerCallStateCallback()
         scope.launch {
             val loaded = runCatching { repository.current() }.getOrElse { AppSettings() }
             settings = loaded
             engine = TimerEngine(loaded.rules, maxSeconds = MAX_CALL_SECONDS + 60)
-            val listenerEnabled = NotificationManagerCompat
+            val listenerEnabled = androidx.core.app.NotificationManagerCompat
                 .getEnabledListenerPackages(applicationContext)
                 .contains(packageName)
 
@@ -113,31 +129,19 @@ class CallTimerForegroundService : Service() {
             } else if (!listenerEnabled) {
                 // 通知アクセスが無い端末では、仕様どおりオフセット方式へ自動で切り替える。
                 startCounting(settings.connectionOffsetSeconds * 1_000L)
-            } else if (pendingConnected) {
-                startCounting(0L)
             } else {
-                // 通知検知を待つ。何かの理由で検知できない場合に備え、60秒で推定開始する。
-                scope.launch {
-                    delay(WAITING_FALLBACK_MS)
-                    if (!counting) {
-                        Log.i(TAG, "no call notification detected; falling back to offset estimate")
-                        startCounting(0L, baseElapsed = sessionStartElapsed + settings.connectionOffsetSeconds * 1_000L)
-                    }
-                }
+                // 通知方式では相手の応答（ACTION_CONNECTED）を待つ。応答が検知できない
+                // 場合はユーザーがオフセット方式へ切り替える（勝手に数え始めない）。
             }
         }
     }
 
-    private fun startCountingIfReady(delayMillis: Long) {
-        if (counting || engine == null) return
-        startCounting(delayMillis)
-    }
-
-    private fun startCounting(delayMillis: Long, baseElapsed: Long = SystemClock.elapsedRealtime()) {
+    private fun startCounting(delayMillis: Long) {
         if (counting) return
         counting = true
         CallTimerState.counting.value = true
-        countStartElapsed = baseElapsed + delayMillis
+        acquireWakeLock()
+        countStartElapsed = SystemClock.elapsedRealtime() + delayMillis
         lastDispatchedSecond = -1
         tickJob?.cancel()
         tickJob = scope.launch { tickLoop() }
@@ -145,8 +149,9 @@ class CallTimerForegroundService : Service() {
 
     private suspend fun tickLoop() {
         while (scope.isActive) {
-            val elapsed = ((SystemClock.elapsedRealtime() - countStartElapsed) / 1_000L).toInt()
-            if (elapsed >= 0) {
+            val elapsedMs = SystemClock.elapsedRealtime() - countStartElapsed
+            if (elapsedMs >= 0L) {
+                val elapsed = (elapsedMs / 1_000L).toInt()
                 val schedule = engine
                 if (schedule != null) {
                     val due = schedule.eventsBetween(lastDispatchedSecond, elapsed)
@@ -182,13 +187,14 @@ class CallTimerForegroundService : Service() {
         }
     }
 
-    private fun ensureForeground(text: String) {
+    /** 前面サービスへ昇格する。失敗したら false を返し、呼び出し側に止まる判断を委ねる。 */
+    private fun ensureForeground(text: String): Boolean {
         if (foregroundStarted) {
             notifyStatus(text)
-            return
+            return true
         }
         val notification = Notifications.statusNotification(this, text)
-        runCatching {
+        return runCatching {
             ServiceCompat.startForeground(
                 this,
                 Notifications.STATUS_NOTIFICATION_ID,
@@ -200,8 +206,10 @@ class CallTimerForegroundService : Service() {
                 },
             )
             foregroundStarted = true
-        }.onFailure {
-            Log.w(TAG, "startForeground failed (notification permission?)", it)
+            true
+        }.getOrElse {
+            Log.w(TAG, "startForeground failed (background start restriction?)", it)
+            false
         }
     }
 
@@ -213,6 +221,22 @@ class CallTimerForegroundService : Service() {
                 Notifications.statusNotification(this, text),
             )
         }
+    }
+
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        runCatching {
+            val power = getSystemService(PowerManager::class.java) ?: return
+            wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG).apply {
+                setReferenceCounted(false)
+                acquire(MAX_CALL_SECONDS * 1_000L)
+            }
+        }.onFailure { Log.w(TAG, "wake lock acquire failed", it) }
+    }
+
+    private fun releaseWakeLock() {
+        runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
+        wakeLock = null
     }
 
     private fun registerCallStateCallback() {
@@ -276,21 +300,27 @@ class CallTimerForegroundService : Service() {
         tickJob?.cancel()
         tickJob = null
         unregisterCallStateCallback()
+        releaseWakeLock()
+        dispatcher.cancel()
         CallTimerState.counting.value = false
         CallTimerState.elapsedSeconds.value = -1
         CallTimerState.running.value = false
+        CallTimerState.sessionId.value = 0L
+        CallTimerState.detectedOutgoing.value = false
         if (foregroundStarted) {
             runCatching { ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE) }
             foregroundStarted = false
         }
         val manager = getSystemService(NotificationManager::class.java)
         manager?.cancel(Notifications.STATUS_NOTIFICATION_ID)
+        Notifications.cancelAlerts(this)
         stopSelf()
     }
 
     override fun onDestroy() {
         tickJob?.cancel()
         unregisterCallStateCallback()
+        releaseWakeLock()
         CallTimerState.running.value = false
         CallTimerState.counting.value = false
         scope.cancel()
@@ -299,33 +329,51 @@ class CallTimerForegroundService : Service() {
 
     companion object {
         private const val TAG = "CallTimerService"
+        private const val WAKE_LOCK_TAG = "call5min:timer"
         const val ACTION_START = "com.yuushilabs.call5mintimer.action.START"
         const val ACTION_CONNECTED = "com.yuushilabs.call5mintimer.action.CONNECTED"
         const val ACTION_STOP = "com.yuushilabs.call5mintimer.action.STOP"
 
         private const val TICK_INTERVAL_MS = 200L
-        private const val WAITING_FALLBACK_MS = 60_000L
         private const val MAX_CALL_SECONDS = 2 * 60 * 60
         private const val MAX_CATCH_UP_EVENTS = 3
 
-        /** 発信を検知したときに呼ぶ（リダイレクト or フォールバック）。 */
-        fun start(context: Context) {
+        /**
+         * 通話中タイマーを起動する。
+         *
+         * [fromBackground] が true（PHONE_STATE レシーバー経由）のときは、Android 12+ の
+         * バックグラウンド起動制限を回避できる「電池最適化の除外」があるときだけ起動する。
+         * 除外が無い場合は UI に警告を出して諦める（黙って動かない）。
+         */
+        fun start(context: Context, fromBackground: Boolean) {
             if (CallTimerState.running.value) return
+            if (fromBackground) {
+                val exempt = context.getSystemService(PowerManager::class.java)
+                    ?.isIgnoringBatteryOptimizations(context.packageName) ?: false
+                if (!exempt) {
+                    Log.w(TAG, "battery optimization not exempted; not starting from background")
+                    CallTimerState.batteryBlocked.value = true
+                    return
+                }
+            }
             val intent = Intent(context, CallTimerForegroundService::class.java)
                 .setAction(ACTION_START)
             runCatching {
                 ContextCompat.startForegroundService(context, intent)
                 CallTimerState.running.value = true
-            }.onFailure { Log.w(TAG, "start failed", it) }
+            }.onFailure {
+                Log.w(TAG, "start failed", it)
+                CallTimerState.batteryBlocked.value = true
+            }
         }
 
         /** 相手の応答（00:00）を検知したときに呼ぶ。 */
         fun notifyConnected(context: Context) {
+            if (!CallTimerState.running.value) {
+                start(context, fromBackground = false)
+            }
             val intent = Intent(context, CallTimerForegroundService::class.java)
                 .setAction(ACTION_CONNECTED)
-            if (!CallTimerState.running.value) {
-                start(context)
-            }
             runCatching { context.startService(intent) }
                 .onFailure { Log.w(TAG, "connected failed", it) }
         }

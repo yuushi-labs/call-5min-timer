@@ -52,6 +52,11 @@ class AlertDispatcher(private val context: Context) {
         vibrate(VibrationLength.SHORT, 1, 0L)
     }
 
+    /** 実行中の振動を止める（終話時に呼ぶ）。 */
+    fun cancel() {
+        runCatching { vibrator?.cancel() }
+    }
+
     private fun vibrate(length: VibrationLength, repeats: Int, gapMs: Long) {
         val device = vibrator ?: return
         if (!device.hasVibrator()) return
@@ -82,7 +87,9 @@ class AlertDispatcher(private val context: Context) {
     }
 
     private fun playBeep(volumePercent: Int) {
-        val volume = volumePercent.coerceIn(1, 100)
+        // 音量0は「鳴らさない」の意味。1へ切り上げて鳴らさない。
+        val volume = volumePercent.coerceIn(0, 100)
+        if (volume <= 0) return
         runCatching {
             val tone = ToneGenerator(AudioManager.STREAM_NOTIFICATION, volume)
             try {
@@ -97,6 +104,7 @@ class AlertDispatcher(private val context: Context) {
     }
 
     private fun playSystemTone(volumePercent: Int) {
+        if (volumePercent.coerceIn(0, 100) <= 0) return
         runCatching {
             val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION) ?: return
             val ringtone = RingtoneManager.getRingtone(context, uri) ?: return

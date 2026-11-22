@@ -47,6 +47,7 @@ private val SHOW_ELAPSED = booleanPreferencesKey("show_elapsed")
 private val AUTO_CHECK_UPDATES = booleanPreferencesKey("auto_check_updates")
 private val LAST_UPDATE_CHECK = longPreferencesKey("last_update_check")
 private val UPDATE_ETAG = stringPreferencesKey("update_etag")
+private val LAST_RELEASE_JSON = stringPreferencesKey("last_release_json")
 
 /**
  * 通知ルールと設定の保存先。通話の内容・番号・履歴は一切保存しない。
@@ -110,6 +111,15 @@ class SettingsRepository(private val context: Context) {
     suspend fun recordUpdateEtag(etag: String?) {
         context.dataStore.edit { preferences ->
             if (etag.isNullOrBlank()) preferences.remove(UPDATE_ETAG) else preferences[UPDATE_ETAG] = etag
+        }
+    }
+
+    /** 前回取得したリリース本文。304 は「更新をインストール済み」ではないので、判定にはこれを使う。 */
+    suspend fun lastReleaseBody(): String? = context.dataStore.data.first()[LAST_RELEASE_JSON]
+
+    suspend fun recordLastReleaseBody(body: String?) {
+        context.dataStore.edit { preferences ->
+            if (body.isNullOrBlank()) preferences.remove(LAST_RELEASE_JSON) else preferences[LAST_RELEASE_JSON] = body
         }
     }
 
