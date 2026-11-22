@@ -111,6 +111,36 @@ class CallNotificationParserTest {
     }
 
     @Test
+    fun `answered call with a contact name that contains calling is active`() {
+        // 連絡先名（本文）の「Calling office」を発信中の文言と取り違えない。
+        val state = CallNotificationParser.parse(
+            snapshot(
+                title = "通話中",
+                text = "Calling office",
+                chronometer = true,
+                whenMillis = 1_700_000_030_000L,
+            ),
+        )
+        assertEquals(CallNotificationState.ACTIVE, state)
+    }
+
+    @Test
+    fun `answered call with a dial-like contact name is active`() {
+        val state = CallNotificationParser.parse(
+            snapshot(title = "通話中", text = "ダイヤルサービス", chronometer = true, whenMillis = 1_700_000_030_000L),
+        )
+        assertEquals(CallNotificationState.ACTIVE, state)
+    }
+
+    @Test
+    fun `dialing wording in the body is dialing even with a clock`() {
+        val state = CallNotificationParser.parse(
+            snapshot(title = "090-1234-5678", text = "発信中…", bigText = "00:00", chronometer = true, whenMillis = 1_700_000_000_000L),
+        )
+        assertEquals(CallNotificationState.DIALING, state)
+    }
+
+    @Test
     fun `chronometer means the other side answered`() {
         val state = CallNotificationParser.parse(
             snapshot(title = "通話中", text = "03-1234-5678", chronometer = true, whenMillis = 1_700_000_000_000L),
