@@ -60,6 +60,7 @@ class CallTimerForegroundService : Service() {
     private var sessionInitialized = false
     private var counting = false
     private var pendingConnected = false
+    private var pendingConnectedAtElapsed = 0L
     private var sessionStartElapsed = 0L
     private var countStartElapsed = 0L
     private var lastDispatchedSecond = -1
@@ -84,12 +85,16 @@ class CallTimerForegroundService : Service() {
 
             ACTION_CONNECTED -> {
                 pendingConnected = true
+                // 応答の時刻を計測起点として保持する（初期化が遅れても経過時間がずれない）。
+                if (pendingConnectedAtElapsed == 0L) {
+                    pendingConnectedAtElapsed = SystemClock.elapsedRealtime()
+                }
                 if (!sessionInitialized) {
                     // 通知リスナーから直接届いた場合（発信トリガーより先）も、ここで初期化する。
                     startSession()
                 } else {
                     ensureForeground("相手の応答を検知しました")
-                    startCounting(0L)
+                    startCounting(0L, baseElapsed = pendingConnectedAtElapsed)
                 }
             }
 
@@ -130,9 +135,9 @@ class CallTimerForegroundService : Service() {
                 // 通知アクセスが無い端末では、仕様どおりオフセット方式へ自動で切り替える。
                 startCounting(settings.connectionOffsetSeconds * 1_000L)
             } else if (pendingConnected) {
-                // 応答通知（ACTION_CONNECTED）が初期化より先に届いていた場合も、
-                // ここで保留しておいた応答を処理する。
-                startCounting(0L)
+                // 応答通知（ACTION_CONNECTED）が初期化より先に届いていた場合は、
+                // 応答を受けた時刻を起点にして保留しておいた応答を処理する。
+                startCounting(0L, baseElapsed = pendingConnectedAtElapsed)
             } else {
                 // 通知方式では相手の応答（ACTION_CONNECTED）を待つ。応答が検知できない
                 // 場合はユーザーがオフセット方式へ切り替える（勝手に数え始めない）。
@@ -140,12 +145,12 @@ class CallTimerForegroundService : Service() {
         }
     }
 
-    private fun startCounting(delayMillis: Long) {
+    private fun startCounting(delayMillis: Long, baseElapsed: Long = SystemClock.elapsedRealtime()) {
         if (counting) return
         counting = true
         CallTimerState.counting.value = true
         acquireWakeLock()
-        countStartElapsed = SystemClock.elapsedRealtime() + delayMillis
+        countStartElapsed = baseElapsed + delayMillis
         lastDispatchedSecond = -1
         tickJob?.cancel()
         tickJob = scope.launch { tickLoop() }

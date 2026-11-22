@@ -228,7 +228,13 @@ class CallTimerViewModel(application: Application) : AndroidViewModel(applicatio
     // --- アプリ内アップデート ---
 
     fun checkForUpdates(force: Boolean = true) {
-        if (updateState is UpdateUiState.Checking || updateState is UpdateUiState.Downloading) return
+        if (updateState is UpdateUiState.Checking || updateState is UpdateUiState.Downloading ||
+            updateState is UpdateUiState.Installing || updateState is UpdateUiState.NeedsPermission
+        ) {
+            // 確認中・ダウンロード中・インストーラ表示中・許可待ちの状態を壊さない。
+            // 特に許可待ちを Checking に置き換えると「許可する / もう一度」が消えてしまう。
+            return
+        }
         // デバウンスで Skipped になったときに、復元済みのバナーを壊さないように取っておく。
         val previousBanner = updateState as? UpdateUiState.Available
         updateState = UpdateUiState.Checking
