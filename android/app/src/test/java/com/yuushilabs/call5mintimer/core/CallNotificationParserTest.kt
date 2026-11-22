@@ -120,6 +120,22 @@ class CallNotificationParserTest {
     }
 
     @Test
+    fun `incoming call with clock-like text is still incoming`() {
+        val state = CallNotificationParser.parse(
+            snapshot(packageName = "com.google.android.dialer", title = "Incoming call", text = "12:34"),
+        )
+        assertEquals(CallNotificationState.INCOMING, state)
+    }
+
+    @Test
+    fun `active call without status wording is detected by the clock`() {
+        val state = CallNotificationParser.parse(
+            snapshot(title = "03-1234-5678", text = "00:00"),
+        )
+        assertEquals(CallNotificationState.ACTIVE, state)
+    }
+
+    @Test
     fun `known call packages are recognised`() {
         assertEquals(true, CallNotificationParser.isCallApp("com.android.dialer"))
         assertEquals(true, CallNotificationParser.isCallApp("com.oplus.dialer"))

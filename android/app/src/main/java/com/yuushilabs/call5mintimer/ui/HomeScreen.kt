@@ -58,6 +58,7 @@ fun HomeScreen(
     running: Boolean,
     counting: Boolean,
     elapsedSeconds: Int,
+    batteryBlocked: Boolean,
     updateState: UpdateUiState,
     timeline: List<AlertEvent>,
     onOpenGuide: () -> Unit,
@@ -92,7 +93,7 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            StatusCard(running = running, counting = counting, elapsedSeconds = elapsedSeconds)
+            StatusCard(running = running, counting = counting, elapsedSeconds = elapsedSeconds, batteryBlocked = batteryBlocked)
         }
         item {
             PermissionsCard(
@@ -176,7 +177,7 @@ private fun SectionCard(
 }
 
 @Composable
-private fun StatusCard(running: Boolean, counting: Boolean, elapsedSeconds: Int) {
+private fun StatusCard(running: Boolean, counting: Boolean, elapsedSeconds: Int, batteryBlocked: Boolean) {
     val title = when {
         counting -> "通話計測中"
         running -> "相手の応答を待っています"
@@ -200,6 +201,14 @@ private fun StatusCard(running: Boolean, counting: Boolean, elapsedSeconds: Int)
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(detail, style = MaterialTheme.typography.bodyMedium)
+            if (batteryBlocked && !counting) {
+                Text(
+                    "電池の最適化の除外が無いため、バックグラウンドからの起動を見送りました。" +
+                        "「動作に必要な設定」の「電池の最適化を除外」を設定してください。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
     }
 }

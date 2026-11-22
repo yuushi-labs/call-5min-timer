@@ -41,18 +41,17 @@ android {
 
     signingConfigs {
         create("distribution") {
-            // 配布鍵が無い状態で release を debug 鍵へ黙って切り替えると、配布済みアプリへの
-            // 上書き更新が壊れる。鍵が無い場合はビルドを止める（debug ビルドには影響しない）。
-            require(distributionKeystore.exists()) {
-                "配布用署名鍵が見つかりません: ${distributionKeystore.path} （android/keystore/README.md を参照）"
+            // 鍵の有無は構成段階では見ない（鍵が無くても debug ビルドや Gradle Sync を壊さない）。
+            // release の署名を実行するタスクのときだけ、下の taskGraph.whenReady で検証して止める。
+            if (distributionKeystore.exists()) {
+                storeFile = distributionKeystore
+                storePassword = System.getenv("CALL5_KEYSTORE_PASSWORD")
+                    ?: signingProperties.getProperty("storePassword", "android")
+                keyAlias = System.getenv("CALL5_KEY_ALIAS")
+                    ?: signingProperties.getProperty("keyAlias", "call5min")
+                keyPassword = System.getenv("CALL5_KEY_PASSWORD")
+                    ?: signingProperties.getProperty("keyPassword", "android")
             }
-            storeFile = distributionKeystore
-            storePassword = System.getenv("CALL5_KEYSTORE_PASSWORD")
-                ?: signingProperties.getProperty("storePassword", "android")
-            keyAlias = System.getenv("CALL5_KEY_ALIAS")
-                ?: signingProperties.getProperty("keyAlias", "call5min")
-            keyPassword = System.getenv("CALL5_KEY_PASSWORD")
-                ?: signingProperties.getProperty("keyPassword", "android")
         }
     }
 
@@ -66,6 +65,18 @@ android {
             )
             // 常に固定の配布鍵で署名する（debug 鍵へフォールバックしない）。
             signingConfig = signingConfigs.getByName("distribution")
+        }
+    }
+
+    // release のビルド・パッケージングを実行するときだけ鍵の存在を検証する。
+    // これで「鍵が無い状態の release が debug 鍵で署名される」事故を防ぎつつ、
+    // debug ビルドや単体テストは鍵なしでも構成できる。
+    gradle.taskGraph.whenReady {
+        val runsRelease = allTasks.any { it.name.endsWith("Release") }
+        if (runsRelease) {
+            require(distributionKeystore.exists()) {
+                "配布用署名鍵が見つかりません: ${distributionKeystore.path} （android/keystore/README.md を参照）"
+            }
         }
     }
 

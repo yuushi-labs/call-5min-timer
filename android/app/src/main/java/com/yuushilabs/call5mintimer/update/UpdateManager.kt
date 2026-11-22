@@ -68,8 +68,10 @@ class UpdateManager(
             val release = runCatching { GithubRelease.parse(body) }.getOrElse {
                 return@withContext CheckResult.Failed("リリース情報を読めませんでした")
             }
-            repository.recordUpdateEtag(response.etag)
+            // 本文を先に保存してから ETag を保存する。逆順だと中断時に「ETag は新しいのに
+            // 本文は古い」になり、次の 304 が古い本文で判定されてしまう。
             repository.recordLastReleaseBody(body)
+            repository.recordUpdateEtag(response.etag)
             val info = UpdateDecision.decide(
                 currentVersionName = BuildConfig.VERSION_NAME,
                 currentVersionCode = BuildConfig.VERSION_CODE,
@@ -77,6 +79,23 @@ class UpdateManager(
             ) ?: return@withContext CheckResult.UpToDate
             CheckResult.Available(info)
         }
+
+    /**
+     * 保存済みのリリース本文から更新状態を復元する（通信なし）。
+     * デバウンス中に再起動しても、未インストールの更新バナーが復活するようにする。
+     */
+    suspend fun restoreLastKnown(): CheckResult = withContext(Dispatchers.IO) {
+        val body = repository.lastReleaseBody() ?: return@withContext CheckResult.Skipped
+        val release = runCatching { GithubRelease.parse(body) }.getOrElse {
+            return@withContext CheckResult.Skipped
+        }
+        val info = UpdateDecision.decide(
+            currentVersionName = BuildConfig.VERSION_NAME,
+            currentVersionCode = BuildConfig.VERSION_CODE,
+            release = release,
+        ) ?: return@withContext CheckResult.UpToDate
+        CheckResult.Available(info)
+    }
 
     suspend fun download(
         info: UpdateInfo,

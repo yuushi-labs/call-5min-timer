@@ -41,6 +41,7 @@ class CallTimerViewModel(application: Application) : AndroidViewModel(applicatio
     val sessionRunning = CallTimerState.running
     val sessionCounting = CallTimerState.counting
     val sessionElapsed = CallTimerState.elapsedSeconds
+    val batteryBlocked = CallTimerState.batteryBlocked
 
     var permissions by mutableStateOf(PermissionSnapshot())
         private set
@@ -58,7 +59,22 @@ class CallTimerViewModel(application: Application) : AndroidViewModel(applicatio
             // DataStore の実データを待ってから判定する（初期値の autoCheckUpdates=true を
             // 信じない。OFF で保存済みなら起動時に確認しない）。
             val current = repository.current()
-            if (current.autoCheckUpdates) checkForUpdates(force = false)
+            if (current.autoCheckUpdates) {
+                // デバウンス中に再起動してもバナーが復活するよう、保存済み本文から復元してから
+                // ネットワーク確認を行う。
+                when (val restored = updateManager.restoreLastKnown()) {
+                    is UpdateManager.CheckResult.Available -> {
+                        pendingUpdate = restored
+                        updateState = UpdateUiState.Available(
+                            versionName = restored.info.versionName,
+                            notes = restored.info.notes,
+                            sizeBytes = restored.info.apkSizeBytes,
+                        )
+                    }
+
+                    else -> checkForUpdates(force = false)
+                }
+            }
         }
     }
 

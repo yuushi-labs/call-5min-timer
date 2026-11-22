@@ -113,15 +113,29 @@ class AlertDispatcher(private val context: Context) {
         }.onFailure { Log.w(TAG, "system tone failed", it) }
     }
 
+    private val postedAlertIds = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
+
     private fun postNotification(event: AlertEvent) {
         val manager = context.getSystemService(android.app.NotificationManager::class.java) ?: return
         val text = event.label
         runCatching {
-            manager.notify(
-                Notifications.alertNotificationId(event.atSecond.toLong()),
-                Notifications.alertNotification(context, text),
-            )
+            val id = Notifications.alertNotificationId(event.atSecond.toLong())
+            manager.notify(id, Notifications.alertNotification(context, text))
+            postedAlertIds.add(id)
         }.onFailure { Log.w(TAG, "notify failed", it) }
+    }
+
+    /** 終話時に、このセッションで出した経過のお知らせだけを消す。 */
+    fun cancelPostedAlerts() {
+        val manager = context.getSystemService(android.app.NotificationManager::class.java) ?: return
+        val ids = synchronized(postedAlertIds) {
+            val copy = postedAlertIds.toList()
+            postedAlertIds.clear()
+            copy
+        }
+        for (id in ids) {
+            runCatching { manager.cancel(id) }
+        }
     }
 
     private companion object {

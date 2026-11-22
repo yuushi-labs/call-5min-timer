@@ -81,14 +81,6 @@ object Notifications {
 
     fun alertNotificationId(alertId: Long): Int = ALERT_NOTIFICATION_BASE + (alertId % ALERT_NOTIFICATION_RANGE).toInt()
 
-    /** 終話時に、このセッションで出した経過のお知らせをまとめて消す。 */
-    fun cancelAlerts(context: Context) {
-        val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        for (offset in 0 until ALERT_NOTIFICATION_RANGE) {
-            manager.cancel(ALERT_NOTIFICATION_BASE + offset)
-        }
-    }
-
     fun openAppIntent(context: Context): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)

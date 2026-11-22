@@ -227,9 +227,10 @@ class CallTimerForegroundService : Service() {
         if (wakeLock?.isHeld == true) return
         runCatching {
             val power = getSystemService(PowerManager::class.java) ?: return
+            // オフセット待ちの時間と終了処理の余裕も含めて保持する。
             wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG).apply {
                 setReferenceCounted(false)
-                acquire(MAX_CALL_SECONDS * 1_000L)
+                acquire(MAX_CALL_SECONDS * 1_000L + WAKE_LOCK_MARGIN_MS)
             }
         }.onFailure { Log.w(TAG, "wake lock acquire failed", it) }
     }
@@ -313,7 +314,7 @@ class CallTimerForegroundService : Service() {
         }
         val manager = getSystemService(NotificationManager::class.java)
         manager?.cancel(Notifications.STATUS_NOTIFICATION_ID)
-        Notifications.cancelAlerts(this)
+        dispatcher.cancelPostedAlerts()
         stopSelf()
     }
 
@@ -337,6 +338,7 @@ class CallTimerForegroundService : Service() {
         private const val TICK_INTERVAL_MS = 200L
         private const val MAX_CALL_SECONDS = 2 * 60 * 60
         private const val MAX_CATCH_UP_EVENTS = 3
+        private const val WAKE_LOCK_MARGIN_MS = 10 * 60 * 1_000L
 
         /**
          * 通話中タイマーを起動する。
@@ -346,7 +348,15 @@ class CallTimerForegroundService : Service() {
          * 除外が無い場合は UI に警告を出して諦める（黙って動かない）。
          */
         fun start(context: Context, fromBackground: Boolean) {
-            if (CallTimerState.running.value) return
+            if (CallTimerState.running.value) {
+                if (!CallTimerState.counting.value) {
+                    // 前のセッションが「応答待ち」のまま残っている場合（連続発信など）は
+                    // 新しいセッションとして扱う（遅延終了判定の取り違え防止）。
+                    CallTimerState.sessionId.value = SystemClock.elapsedRealtime()
+                    CallTimerState.detectedOutgoing.value = true
+                }
+                return
+            }
             if (fromBackground) {
                 val exempt = context.getSystemService(PowerManager::class.java)
                     ?.isIgnoringBatteryOptimizations(context.packageName) ?: false

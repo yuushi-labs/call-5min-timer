@@ -56,6 +56,7 @@ private fun CallTimerApp(viewModel: CallTimerViewModel = viewModel()) {
     val running by viewModel.sessionRunning.collectAsStateWithLifecycle()
     val counting by viewModel.sessionCounting.collectAsStateWithLifecycle()
     val elapsed by viewModel.sessionElapsed.collectAsStateWithLifecycle()
+    val batteryBlocked by viewModel.batteryBlocked.collectAsStateWithLifecycle()
 
     var screen by remember { mutableStateOf(Screen.Home) }
     var editor by remember { mutableStateOf<RuleEditorTarget?>(null) }
@@ -117,6 +118,7 @@ private fun CallTimerApp(viewModel: CallTimerViewModel = viewModel()) {
                 running = running,
                 counting = counting,
                 elapsedSeconds = elapsed,
+                batteryBlocked = batteryBlocked,
                 updateState = updateState,
                 timeline = viewModel.presetTimeline(),
                 onOpenGuide = { screen = Screen.Guide },
