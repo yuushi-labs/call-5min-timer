@@ -15,3 +15,7 @@ android/app/release/
 
 # OS
 .DS_Store
+
+# JVM/Gradle のクラッシュログ
+android/hs_err_pid*.log
+android/replay_pid*.log
