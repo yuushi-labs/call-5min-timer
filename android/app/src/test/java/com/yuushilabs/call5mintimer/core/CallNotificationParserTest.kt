@@ -162,6 +162,23 @@ class CallNotificationParserTest {
     }
 
     @Test
+    fun `answered call with a contact name that contains ringing is active`() {
+        // 連絡先名（本文）の「Stringing Service」を着信の文言と取り違えない。
+        val state = CallNotificationParser.parse(
+            snapshot(title = "通話中", text = "Stringing Service", chronometer = true, whenMillis = 1_700_000_030_000L),
+        )
+        assertEquals(CallNotificationState.ACTIVE, state)
+    }
+
+    @Test
+    fun `ringing wording in the body is still incoming`() {
+        val state = CallNotificationParser.parse(
+            snapshot(packageName = "com.google.android.dialer", title = "090-1234-5678", text = "Ringing…"),
+        )
+        assertEquals(CallNotificationState.INCOMING, state)
+    }
+
+    @Test
     fun `chronometer means the other side answered`() {
         val state = CallNotificationParser.parse(
             snapshot(title = "通話中", text = "03-1234-5678", chronometer = true, whenMillis = 1_700_000_000_000L),

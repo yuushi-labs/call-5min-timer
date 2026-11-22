@@ -79,9 +79,12 @@ object CallNotificationParser {
         "in call", "ongoing call", "on call", "active call",
     )
 
-    private val INCOMING_MARKERS = listOf(
-        "着信中", "着信", "受話", "incoming", "incoming call", "ringing",
+    private val EXPLICIT_INCOMING_MARKERS = listOf(
+        "着信中", "着信", "受話", "incoming", "incoming call",
     )
+
+    /** 連絡先名にも見える着信の語（`Stringing Service` など）。 */
+    private val AMBIGUOUS_INCOMING_MARKERS = listOf("ringing")
 
     /** `00:00` / `1:23` / `1:02:03` のような経過表示。 */
     private val CLOCK_PATTERN = Regex("""(?<!\d)(\d{1,2}):(\d{2})(?::(\d{2}))?(?!\d)""")
@@ -105,34 +108,42 @@ object CallNotificationParser {
         // 状態を表す欄（タイトル・サブテキスト）と、連絡先名が入りうる本文を分けて考える。
         val status = list(snapshot.title, snapshot.subText).lowercase()
 
-        // 1. 着信。連絡先名や本文に「Calling〜」「On Call〜」のような語が混ざっていても
-        //    着信を優先する（発信・通話中の判定はこの後）。
-        if (INCOMING_MARKERS.any { lower.contains(it) }) return CallNotificationState.INCOMING
+        // 1. 着信。状態の欄の「着信中」「Incoming call」を最優先する。
+        if (EXPLICIT_INCOMING_MARKERS.any { status.contains(it) }) return CallNotificationState.INCOMING
 
-        // 2. 「発信中」「呼び出し中」など、はっきりした発信語。OPPO（ColorOS）は発信中のまま
+        // 2. 本文にしか無くても、はっきりした着信語なら着信。
+        if (EXPLICIT_INCOMING_MARKERS.any { lower.contains(it) }) return CallNotificationState.INCOMING
+
+        // 3. 「発信中」「呼び出し中」など、はっきりした発信語。OPPO（ColorOS）は発信中のまま
         //    `showChronometer` や 00:00 を出すため、ここではクロノメーターや時刻を見ない。
         //    連絡先名の「On Call Support」のような通話中らしい語より優先する。
         if (EXPLICIT_DIALING_MARKERS.any { lower.contains(it) }) return CallNotificationState.DIALING
 
-        // 3. 状態の欄が「通話中」なら、本文に連絡先名（Calling office など）があっても通話中。
+        // 4. 状態の欄が「通話中」なら、本文に連絡先名（Calling office など）があっても通話中。
         if (STRONG_ACTIVE_MARKERS.any { status.contains(it) }) return CallNotificationState.ACTIVE
 
-        // 4. 本文の「通話中」も、曖昧な発信語（Calling… / ダイヤル）より先に通話中とみなす。
+        // 5. 本文の「通話中」も、曖昧な発信語（Calling… / ダイヤル）より先に通話中とみなす。
         if (STRONG_ACTIVE_MARKERS.any { lower.contains(it) }) return CallNotificationState.ACTIVE
 
-        // 5. 文言が無い端末・通話アプリ向け。クロノメーターが動いている、または経過表示がある。
+        // 6. 文言が無い端末・通話アプリ向け。クロノメーターが動いている、または経過表示がある。
         if (snapshot.chronometerRunning && snapshot.postedWhenMillis > 0L) {
             return CallNotificationState.ACTIVE
         }
         if (parseElapsedSeconds(combined) != null) return CallNotificationState.ACTIVE
 
-        // 6. 状態の欄が「Calling…」「ダイヤル中」などなら呼び出し中。
+        // 7. 状態の欄が「Ringing」などなら着信。
+        if (AMBIGUOUS_INCOMING_MARKERS.any { status.contains(it) }) return CallNotificationState.INCOMING
+
+        // 8. 状態の欄が「Calling…」「ダイヤル中」などなら呼び出し中。
         if (AMBIGUOUS_DIALING_MARKERS.any { status.contains(it) }) return CallNotificationState.DIALING
 
-        // 7. 本文にしか無い紛らわしい発信語（連絡先名の可能性がある）。
+        // 9. 本文にしか無い紛らわしい発信語（連絡先名の可能性がある）。
         if (AMBIGUOUS_DIALING_MARKERS.any { lower.contains(it) }) return CallNotificationState.DIALING
 
-        // 8. 本文にしか無い通話中の語（In call / On Call など）。
+        // 10. 本文にしか無い紛らわしい着信の語（Stringing Service など）。
+        if (AMBIGUOUS_INCOMING_MARKERS.any { lower.contains(it) }) return CallNotificationState.INCOMING
+
+        // 11. 本文にしか無い通話中の語（In call / On Call など）。
         if (AMBIGUOUS_ACTIVE_MARKERS.any { lower.contains(it) }) return CallNotificationState.ACTIVE
 
         return CallNotificationState.UNKNOWN_CALL
