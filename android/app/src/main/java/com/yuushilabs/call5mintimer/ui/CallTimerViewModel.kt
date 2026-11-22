@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.yuushilabs.call5mintimer.core.AlertSpec
 import com.yuushilabs.call5mintimer.core.AlertEvent
+import com.yuushilabs.call5mintimer.core.ElapsedTracker
 import com.yuushilabs.call5mintimer.core.PeriodicRule
 import com.yuushilabs.call5mintimer.core.SpotRule
 import com.yuushilabs.call5mintimer.core.TimerEngine
@@ -99,6 +100,24 @@ class CallTimerViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setOffsetSeconds(seconds: Int) = viewModelScope.launch {
         repository.update { it.copy(connectionOffsetSeconds = seconds.coerceIn(0, 60)) }
+    }
+
+    fun setStartElapsedSeconds(seconds: Int) = viewModelScope.launch {
+        repository.update {
+            it.copy(
+                startElapsedSeconds = seconds.coerceIn(0, ElapsedTracker.MAX_START_ELAPSED_SECONDS),
+            )
+        }
+    }
+
+    /** ステッパー用。連続操作でも取りこぼさないよう、保存済みの最新値に増分を足す。 */
+    fun changeStartElapsedSeconds(delta: Int) = viewModelScope.launch {
+        repository.update {
+            it.copy(
+                startElapsedSeconds = (it.startElapsedSeconds + delta)
+                    .coerceIn(0, ElapsedTracker.MAX_START_ELAPSED_SECONDS),
+            )
+        }
     }
 
     fun setShowElapsedInNotification(enabled: Boolean) = viewModelScope.launch {
