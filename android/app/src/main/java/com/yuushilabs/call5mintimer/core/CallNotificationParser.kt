@@ -96,12 +96,12 @@ object CallNotificationParser {
             return CallNotificationState.ACTIVE
         }
 
-        // 2. 「通話中」の文言（クロノメーター非対応の端末・通話アプリ向け）。
-        if (ACTIVE_MARKERS.any { lower.contains(it) }) return CallNotificationState.ACTIVE
-
-        // 3. 着信。連絡先名や本文に「Calling〜」「12:34」のような語が混ざっていても
+        // 2. 着信。連絡先名や本文に「Calling〜」「On Call〜」のような語が混ざっていても
         //    着信を優先する（発信・通話中の判定はこの後）。
         if (INCOMING_MARKERS.any { lower.contains(it) }) return CallNotificationState.INCOMING
+
+        // 3. 「通話中」の文言（クロノメーター非対応の端末・通話アプリ向け）。
+        if (ACTIVE_MARKERS.any { lower.contains(it) }) return CallNotificationState.ACTIVE
 
         // 4. 経過表示（00:00 など）は着信文言が無い場合だけ通話中とみなす。
         val elapsed = parseElapsedSeconds(combined)

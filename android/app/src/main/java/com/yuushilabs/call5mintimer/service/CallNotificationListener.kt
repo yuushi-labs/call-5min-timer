@@ -13,6 +13,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.Collections
 
 /**
  * 相手が出た瞬間の検知。
@@ -26,19 +27,14 @@ class CallNotificationListener : NotificationListenerService() {
 
     @Volatile private var sawDialing = false
 
-    /** 着信と判定したフラグと、そのときのセッション ID。別セッションに変わっていたら古い着信フラグは無効。 */
-    @Volatile private var incomingSessionFlag = false
-    @Volatile private var incomingSessionId = 0L
+    /** この発信セッションで見た通話通知のキー。終話判定はこのキーだけで行う。 */
+    private val sessionKeys: MutableSet<String> = Collections.synchronizedSet(mutableSetOf())
 
-    private fun incomingActive(): Boolean {
-        if (!incomingSessionFlag) return false
-        // 前の通話（着信）のフラグが次の発信セッションに持ち越されていないか確認する。
-        if (incomingSessionId != CallTimerState.sessionId.value) {
-            incomingSessionFlag = false
-            return false
-        }
-        return true
-    }
+    /** 着信と判定した通知のキー。同じキーが ACTIVE になったら着信が応答されたものとして除外する。 */
+    private val incomingKeys: MutableSet<String> = Collections.synchronizedSet(mutableSetOf())
+
+    /** 着信と判定したときのセッション ID。別セッションに変わっていたら古い着信情報は無効。 */
+    @Volatile private var incomingSessionId = 0L
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         val snapshot = sbn?.let { toSnapshot(it) } ?: return
@@ -46,23 +42,27 @@ class CallNotificationListener : NotificationListenerService() {
         when (state) {
             CallNotificationState.DIALING -> {
                 sawDialing = true
+                sessionKeys.add(sbn.key)
+                incomingKeys.remove(sbn.key)
                 if (!CallTimerState.running.value) {
                     CallTimerForegroundService.start(this, fromBackground = false)
                 }
             }
 
             CallNotificationState.ACTIVE -> {
+                val isIncomingAnswered = sbn.key in incomingKeys &&
+                    incomingSessionId == CallTimerState.sessionId.value
                 // 発信と分かっている通話（リスナーで呼び出し中を拾った、または PHONE_STATE
                 // フォールバックが発信と判定してサービスを起こした）で、まだ数え始めて
-                // いないなら、ここが相手の応答（00:00）。現在有効な着信があれば除外する。
-                if (!incomingActive() && (sawDialing || CallTimerState.detectedOutgoing.value)) {
+                // いないなら、ここが相手の応答（00:00）。追跡中の着信が応答されたものは除外。
+                if (!isIncomingAnswered && (sawDialing || CallTimerState.detectedOutgoing.value)) {
                     CallTimerForegroundService.notifyConnected(this)
                 }
             }
 
             CallNotificationState.INCOMING -> {
                 sawDialing = false
-                incomingSessionFlag = true
+                incomingKeys.add(sbn.key)
                 incomingSessionId = CallTimerState.sessionId.value
             }
 
@@ -73,29 +73,33 @@ class CallNotificationListener : NotificationListenerService() {
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         val snapshot = sbn?.let { toSnapshot(it) } ?: return
         val state = CallNotificationParser.parse(snapshot)
+        val key = sbn.key
+
         if (state == CallNotificationState.INCOMING) {
-            // この着信が消えたので、フラグを持ち越さない。
-            incomingSessionFlag = false
+            // この着信通知が消えた。同じキーが ACTIVE になっても着信応答として扱うため、
+            // キーは残す（判定は incomingSessionId で古いセッションを無効化する）。
             return
         }
         if (state != CallNotificationState.DIALING && state != CallNotificationState.ACTIVE) return
 
+        // 現在のセッションで追跡している通話通知だけが終話判定の対象。
+        // 留守番電話の表示など無関係な通知はここで除外される。
+        if (key !in sessionKeys) return
+
         // 通話アプリは通知を消して別キーで出し直すことがある。1.5 秒待って
-        // 「通話アプリの進行中通知が1件も無い」ことと「同じ通話セッションであること」を
-        // 確認してから、本当の終話として止める。
+        // 「このセッションで追跡している通話通知が1件も無い」ことと「同じ通話セッション
+        // であること」を確認してから、本当の終話として止める。
         val judgedSessionId = CallTimerState.sessionId.value
         scope.launch {
             delay(END_GRACE_MS)
             val sessionChanged = CallTimerState.sessionId.value != judgedSessionId
-            val callNotificationsGone = runCatching {
-                activeNotifications.orEmpty().none { sbn ->
-                    val parsed = CallNotificationParser.parse(toSnapshot(sbn))
-                    parsed == CallNotificationState.DIALING || parsed == CallNotificationState.ACTIVE
-                }
+            val sessionNotificationsGone = runCatching {
+                val activeKeys = activeNotifications.orEmpty().map { it.key }.toSet()
+                sessionKeys.none { it in activeKeys }
             }.getOrDefault(false)
-            if (callNotificationsGone && !sessionChanged) {
+            if (sessionNotificationsGone && !sessionChanged) {
                 sawDialing = false
-                incomingSessionFlag = false
+                sessionKeys.clear()
                 if (CallTimerState.running.value) {
                     CallTimerForegroundService.stop(this@CallNotificationListener)
                 }

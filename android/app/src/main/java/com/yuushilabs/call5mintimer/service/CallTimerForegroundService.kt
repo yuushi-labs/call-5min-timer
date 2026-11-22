@@ -129,6 +129,10 @@ class CallTimerForegroundService : Service() {
             } else if (!listenerEnabled) {
                 // 通知アクセスが無い端末では、仕様どおりオフセット方式へ自動で切り替える。
                 startCounting(settings.connectionOffsetSeconds * 1_000L)
+            } else if (pendingConnected) {
+                // 応答通知（ACTION_CONNECTED）が初期化より先に届いていた場合も、
+                // ここで保留しておいた応答を処理する。
+                startCounting(0L)
             } else {
                 // 通知方式では相手の応答（ACTION_CONNECTED）を待つ。応答が検知できない
                 // 場合はユーザーがオフセット方式へ切り替える（勝手に数え始めない）。

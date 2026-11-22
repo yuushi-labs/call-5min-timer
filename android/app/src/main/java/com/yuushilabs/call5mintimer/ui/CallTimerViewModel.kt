@@ -60,20 +60,23 @@ class CallTimerViewModel(application: Application) : AndroidViewModel(applicatio
             // 信じない。OFF で保存済みなら起動時に確認しない）。
             val current = repository.current()
             if (current.autoCheckUpdates) {
-                // デバウンス中に再起動してもバナーが復活するよう、保存済み本文から復元してから
-                // ネットワーク確認を行う。
+                // デバウンス中の再起動でもバナーが復活するよう、保存済み本文から復元してから
+                // ネットワーク確認を行う（確認しても Skipped なら復元したバナーを維持）。
                 when (val restored = updateManager.restoreLastKnown()) {
                     is UpdateManager.CheckResult.Available -> {
-                        pendingUpdate = restored
-                        updateState = UpdateUiState.Available(
-                            versionName = restored.info.versionName,
-                            notes = restored.info.notes,
-                            sizeBytes = restored.info.apkSizeBytes,
-                        )
+                        if (updateState is UpdateUiState.Idle) {
+                            pendingUpdate = restored
+                            updateState = UpdateUiState.Available(
+                                versionName = restored.info.versionName,
+                                notes = restored.info.notes,
+                                sizeBytes = restored.info.apkSizeBytes,
+                            )
+                        }
                     }
 
-                    else -> checkForUpdates(force = false)
+                    else -> Unit
                 }
+                checkForUpdates(force = false)
             }
         }
     }
@@ -226,6 +229,8 @@ class CallTimerViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun checkForUpdates(force: Boolean = true) {
         if (updateState is UpdateUiState.Checking || updateState is UpdateUiState.Downloading) return
+        // デバウンスで Skipped になったときに、復元済みのバナーを壊さないように取っておく。
+        val previousBanner = updateState as? UpdateUiState.Available
         updateState = UpdateUiState.Checking
         viewModelScope.launch {
             when (val result = updateManager.check(force)) {
@@ -239,7 +244,7 @@ class CallTimerViewModel(application: Application) : AndroidViewModel(applicatio
                 }
 
                 UpdateManager.CheckResult.UpToDate -> updateState = UpdateUiState.UpToDate
-                UpdateManager.CheckResult.Skipped -> updateState = UpdateUiState.Idle
+                UpdateManager.CheckResult.Skipped -> updateState = previousBanner ?: UpdateUiState.Idle
                 is UpdateManager.CheckResult.Failed -> updateState = UpdateUiState.Error(result.message)
             }
         }

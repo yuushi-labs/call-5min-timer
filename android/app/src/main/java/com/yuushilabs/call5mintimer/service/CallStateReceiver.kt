@@ -29,8 +29,9 @@ class CallStateReceiver : BroadcastReceiver() {
                 val previous = preferences.getString(KEY_LAST_STATE, null)
                 preferences.edit().putString(KEY_LAST_STATE, state).apply()
                 val looksOutgoing = previous != TelephonyManager.EXTRA_STATE_RINGING
-                if (looksOutgoing && !CallTimerState.running.value) {
+                if (looksOutgoing) {
                     Log.i(TAG, "OFFHOOK without RINGING: treating as outgoing call")
+                    // 前の応答待ちセッションが残っていれば start() がセッションを更新する。
                     // バックグラウンドからは電池最適化の除外があるときだけ起動する。
                     // 除外が無い場合は起動を断念し、UI の診断に警告を出す。
                     CallTimerForegroundService.start(context, fromBackground = true)

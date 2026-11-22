@@ -68,10 +68,8 @@ class UpdateManager(
             val release = runCatching { GithubRelease.parse(body) }.getOrElse {
                 return@withContext CheckResult.Failed("リリース情報を読めませんでした")
             }
-            // 本文を先に保存してから ETag を保存する。逆順だと中断時に「ETag は新しいのに
-            // 本文は古い」になり、次の 304 が古い本文で判定されてしまう。
-            repository.recordLastReleaseBody(body)
-            repository.recordUpdateEtag(response.etag)
+            // ETag と本文は同じトランザクションで保存する（中断時の不整合を防ぐ）。
+            repository.recordUpdateResult(response.etag, body)
             val info = UpdateDecision.decide(
                 currentVersionName = BuildConfig.VERSION_NAME,
                 currentVersionCode = BuildConfig.VERSION_CODE,

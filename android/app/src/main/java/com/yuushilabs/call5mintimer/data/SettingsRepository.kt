@@ -108,18 +108,14 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun updateEtag(): String? = context.dataStore.data.first()[UPDATE_ETAG]
 
-    suspend fun recordUpdateEtag(etag: String?) {
-        context.dataStore.edit { preferences ->
-            if (etag.isNullOrBlank()) preferences.remove(UPDATE_ETAG) else preferences[UPDATE_ETAG] = etag
-        }
-    }
-
     /** 前回取得したリリース本文。304 は「更新をインストール済み」ではないので、判定にはこれを使う。 */
     suspend fun lastReleaseBody(): String? = context.dataStore.data.first()[LAST_RELEASE_JSON]
 
-    suspend fun recordLastReleaseBody(body: String?) {
+    /** ETag とリリース本文を同じトランザクションで保存する（中断時の不整合を防ぐ）。 */
+    suspend fun recordUpdateResult(etag: String?, body: String) {
         context.dataStore.edit { preferences ->
-            if (body.isNullOrBlank()) preferences.remove(LAST_RELEASE_JSON) else preferences[LAST_RELEASE_JSON] = body
+            if (etag.isNullOrBlank()) preferences.remove(UPDATE_ETAG) else preferences[UPDATE_ETAG] = etag
+            preferences[LAST_RELEASE_JSON] = body
         }
     }
 

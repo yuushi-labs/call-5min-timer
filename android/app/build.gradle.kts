@@ -68,12 +68,15 @@ android {
         }
     }
 
-    // release のビルド・パッケージングを実行するときだけ鍵の存在を検証する。
-    // これで「鍵が無い状態の release が debug 鍵で署名される」事故を防ぎつつ、
-    // debug ビルドや単体テストは鍵なしでも構成できる。
+    // release のビルド・パッケージング（署名を伴うタスク）を実行するときだけ鍵の存在を検証する。
+    // lintRelease のような署名しないタスクは対象外。これで「鍵が無い状態の release が
+    // debug 鍵で署名される」事故を防ぎつつ、debug ビルドや単体テストは鍵なしでも構成できる。
     gradle.taskGraph.whenReady {
-        val runsRelease = allTasks.any { it.name.endsWith("Release") }
-        if (runsRelease) {
+        val runsSignedRelease = allTasks.any {
+            it.name == "assembleRelease" || it.name == "packageRelease" ||
+                it.name == "bundleRelease" || it.name == "buildRelease"
+        }
+        if (runsSignedRelease) {
             require(distributionKeystore.exists()) {
                 "配布用署名鍵が見つかりません: ${distributionKeystore.path} （android/keystore/README.md を参照）"
             }

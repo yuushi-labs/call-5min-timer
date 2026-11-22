@@ -128,6 +128,14 @@ class CallNotificationParserTest {
     }
 
     @Test
+    fun `incoming call with on-call wording in the body is still incoming`() {
+        val state = CallNotificationParser.parse(
+            snapshot(packageName = "com.google.android.dialer", title = "Incoming call", text = "On Call Support"),
+        )
+        assertEquals(CallNotificationState.INCOMING, state)
+    }
+
+    @Test
     fun `active call without status wording is detected by the clock`() {
         val state = CallNotificationParser.parse(
             snapshot(title = "03-1234-5678", text = "00:00"),
