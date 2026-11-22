@@ -10,7 +10,7 @@ ahamo などの「1回5分以内の国内通話無料」プランでは、通話
 1. **対象ユーザー端末**：OPPO（ColorOS 系 Android）を主対象とし、標準 Android（Pixel 等）でも動作すること。
 2. **迷惑電話対策アプリとの共存**：すでに「電話帳ナビ」等が `CallScreeningService`（デフォルトの迷惑電話対策・発信者番号アプリ）として設定されている環境を前提とし、その枠を奪わず・競合しない設計にすること。
 3. **タスクキル耐性（ColorOS 対策）**：ColorOS はバックグラウンド常駐アプリを強力に終了するため、**普段は常駐プロセスを持たず、発信・通話イベント発生時のみ OS から起動され、終話と同時に終了する**イベント駆動設計にする。
-4. **完全オフライン・プライバシー保護**：`INTERNET` 権限を要求せず、通話内容・電話番号・通話履歴を一切保存・送信しない。
+4. **完全オフライン・プライバシー保護（通話データ）**：通話内容・電話番号・通話履歴を一切保存・送信しない。ネットワーク通信（`INTERNET` 権限）はアプリ内アップデートの GitHub Releases 確認・APK ダウンロードのみに使用し、通話計測自体は完全オフラインで動作する。
 
 ---
 
@@ -98,7 +98,18 @@ Android の一般アプリはシステム権限（`PRECISE_CALL_STATE` 等）を
 
 ---
 
-## 5. アーキテクチャ・技術構成案
+## 5. アプリ内自動アップデート・リリース仕様
+
+1. **GitHub Releases 連携自動アップデート**
+   - `https://api.github.com/repos/yuushi-labs/call-5min-timer/releases/latest` を参照し、現在の `versionName` / `versionCode` より新しいリリース（`call-5min-timer-v*.apk`）があるか確認する。
+   - ETag（`If-None-Match` / `304 Not Modified`）とデバウンス制御で無駄な通信を抑える。
+   - アプリ内に「新しいバージョンがあります」バナーおよび手動チェックボタンを配置し、ダウンロード進捗表示 → `FileProvider` 経由で Android パッケージインストーラを起動 → 古いダウンロード済み APK を自動削除する。
+2. **固定配布署名鍵（上書き更新互換）**
+   - 毎回の Release で上書きインストールできるよう、リポジトリ内（`android/keystore/` 等）の固定配布用署名鍵（または CI Secrets）で Release APK に署名する。
+
+---
+
+## 6. アーキテクチャ・技術構成案
 
 - **言語 / UI**：Kotlin / Jetpack Compose / Material 3
 - **非同期・状態管理**：Kotlin Coroutines / `StateFlow`
@@ -129,7 +140,7 @@ app/src/main/java/com/yuushilabs/call5mintimer/
 
 ---
 
-## 6. テスト・検証計画
+## 7. テスト・検証計画
 
 ### 自動テスト（JVM Unit Test）
 - `TimerEngine`：
