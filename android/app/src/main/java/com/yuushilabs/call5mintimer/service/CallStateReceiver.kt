@@ -22,6 +22,8 @@ class CallStateReceiver : BroadcastReceiver() {
 
         when (state) {
             TelephonyManager.EXTRA_STATE_RINGING -> {
+                // 着信。直前の発信フラグを消す（前の通話の取り違え防止）。
+                CallTimerState.detectedOutgoing.value = false
                 preferences.edit().putString(KEY_LAST_STATE, state).apply()
             }
 
@@ -31,6 +33,10 @@ class CallStateReceiver : BroadcastReceiver() {
                 val looksOutgoing = previous != TelephonyManager.EXTRA_STATE_RINGING
                 if (looksOutgoing) {
                     Log.i(TAG, "OFFHOOK without RINGING: treating as outgoing call")
+                    // サービスを起動できたかどうかに関係なく「発信」を記録する。
+                    // 電池最適化の除外が無くて起動を断念しても、通知リスナーが最初から
+                    // ACTIVE（00:00）の通知を見たときに相手の応答で計測を始められる。
+                    CallTimerState.detectedOutgoing.value = true
                     // 前の応答待ちセッションが残っていれば start() がセッションを更新する。
                     // バックグラウンドからは電池最適化の除外があるときだけ起動する。
                     // 除外が無い場合は起動を断念し、UI の診断に警告を出す。
@@ -40,6 +46,7 @@ class CallStateReceiver : BroadcastReceiver() {
 
             TelephonyManager.EXTRA_STATE_IDLE -> {
                 preferences.edit().putString(KEY_LAST_STATE, state).apply()
+                CallTimerState.detectedOutgoing.value = false
                 if (CallTimerState.running.value) {
                     CallTimerForegroundService.stop(context)
                 }
