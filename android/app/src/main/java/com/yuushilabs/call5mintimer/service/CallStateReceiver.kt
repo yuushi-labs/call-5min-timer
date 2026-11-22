@@ -3,6 +3,7 @@ package com.yuushilabs.call5mintimer.service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.SystemClock
 import android.telephony.TelephonyManager
 import android.util.Log
 
@@ -37,6 +38,9 @@ class CallStateReceiver : BroadcastReceiver() {
                     // 電池最適化の除外が無くて起動を断念しても、通知リスナーが最初から
                     // ACTIVE（00:00）の通知を見たときに相手の応答で計測を始められる。
                     CallTimerState.detectedOutgoing.value = true
+                    // 前の着信で残った通知キー（incomingKeys）を新しい発信と一致させないため、
+                    // セッション識別子も更新する（サービスを起動できなくても同じ）。
+                    CallTimerState.sessionId.value = SystemClock.elapsedRealtime()
                     // 前の応答待ちセッションが残っていれば start() がセッションを更新する。
                     // バックグラウンドからは電池最適化の除外があるときだけ起動する。
                     // 除外が無い場合は起動を断念し、UI の診断に警告を出す。
