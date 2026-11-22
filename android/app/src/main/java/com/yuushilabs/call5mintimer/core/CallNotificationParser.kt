@@ -117,17 +117,17 @@ object CallNotificationParser {
         // 3. 状態の欄が「通話中」なら、本文に連絡先名（Calling office など）があっても通話中。
         if (STRONG_ACTIVE_MARKERS.any { status.contains(it) }) return CallNotificationState.ACTIVE
 
-        // 4. 文言が無い端末・通話アプリ向け。クロノメーターが動いている、または経過表示がある。
+        // 4. 本文の「通話中」も、曖昧な発信語（Calling… / ダイヤル）より先に通話中とみなす。
+        if (STRONG_ACTIVE_MARKERS.any { lower.contains(it) }) return CallNotificationState.ACTIVE
+
+        // 5. 文言が無い端末・通話アプリ向け。クロノメーターが動いている、または経過表示がある。
         if (snapshot.chronometerRunning && snapshot.postedWhenMillis > 0L) {
             return CallNotificationState.ACTIVE
         }
         if (parseElapsedSeconds(combined) != null) return CallNotificationState.ACTIVE
 
-        // 5. 状態の欄が「Calling…」「ダイヤル中」などなら呼び出し中。
+        // 6. 状態の欄が「Calling…」「ダイヤル中」などなら呼び出し中。
         if (AMBIGUOUS_DIALING_MARKERS.any { status.contains(it) }) return CallNotificationState.DIALING
-
-        // 6. 本文の「通話中」など、状態の欄に無い通話中の手がかり。
-        if (STRONG_ACTIVE_MARKERS.any { lower.contains(it) }) return CallNotificationState.ACTIVE
 
         // 7. 本文にしか無い紛らわしい発信語（連絡先名の可能性がある）。
         if (AMBIGUOUS_DIALING_MARKERS.any { lower.contains(it) }) return CallNotificationState.DIALING

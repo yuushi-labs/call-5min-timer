@@ -153,6 +153,15 @@ class CallNotificationParserTest {
     }
 
     @Test
+    fun `active wording in the body beats a calling contact name in the title`() {
+        // クロノメーターも経過表示も無いが、本文が「通話中」なら応答後。
+        val state = CallNotificationParser.parse(
+            snapshot(title = "Calling office", text = "通話中"),
+        )
+        assertEquals(CallNotificationState.ACTIVE, state)
+    }
+
+    @Test
     fun `chronometer means the other side answered`() {
         val state = CallNotificationParser.parse(
             snapshot(title = "通話中", text = "03-1234-5678", chronometer = true, whenMillis = 1_700_000_000_000L),
