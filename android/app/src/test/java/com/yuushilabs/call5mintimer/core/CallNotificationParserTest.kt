@@ -171,6 +171,29 @@ class CallNotificationParserTest {
     }
 
     @Test
+    fun `ringing in the body wins over a calling contact name in the title`() {
+        // 着信通知はタイトルが連絡先名（Calling office）でも、本文が `Ringing…` なら着信。
+        val ringing = CallNotificationParser.parse(
+            snapshot(title = "Calling office", text = "Ringing…"),
+        )
+        assertEquals(CallNotificationState.INCOMING, ringing)
+    }
+
+    @Test
+    fun `incoming call that is answered is not treated as an outgoing connection`() {
+        // 着信（Ringing…）→ 応答（00:00）。着信のキーは incomingKeys に入るので、
+        // リスナーは notifyConnected を呼ばない（解析結果が ACTIVE でも着信応答として除外）。
+        val ringing = CallNotificationParser.parse(
+            snapshot(title = "Calling office", text = "Ringing…"),
+        )
+        val answered = CallNotificationParser.parse(
+            snapshot(title = "Calling office", text = "00:00", chronometer = true, whenMillis = 1_700_000_030_000L),
+        )
+        assertEquals(CallNotificationState.INCOMING, ringing)
+        assertEquals(CallNotificationState.ACTIVE, answered)
+    }
+
+    @Test
     fun `ringing wording in the body is still incoming`() {
         val state = CallNotificationParser.parse(
             snapshot(packageName = "com.google.android.dialer", title = "090-1234-5678", text = "Ringing…"),

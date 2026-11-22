@@ -86,6 +86,13 @@ object CallNotificationParser {
     /** 連絡先名にも見える着信の語（`Stringing Service` など）。 */
     private val AMBIGUOUS_INCOMING_MARKERS = listOf("ringing")
 
+    /**
+     * 欄全体が `Ringing`（末尾の「…」や空白を含む）のときだけ着信とみなす。
+     * 着信通知はタイトルが連絡先名でも、本文が `Ringing…` だけになることがある。
+     * 部分一致だと `Stringing Service` のような連絡先名まで着信になるため、全体一致にする。
+     */
+    private val RINGING_FIELD = Regex("""^\s*ringing[\s.…]*$""", RegexOption.IGNORE_CASE)
+
     /** `00:00` / `1:23` / `1:02:03` のような経過表示。 */
     private val CLOCK_PATTERN = Regex("""(?<!\d)(\d{1,2}):(\d{2})(?::(\d{2}))?(?!\d)""")
 
@@ -131,23 +138,32 @@ object CallNotificationParser {
         }
         if (parseElapsedSeconds(combined) != null) return CallNotificationState.ACTIVE
 
-        // 7. 状態の欄が「Ringing」などなら着信。
+        // 7. 欄全体が `Ringing…` なら着信（タイトルが連絡先名でも）。
+        //    部分一致にすると `Stringing Service` のような連絡先名まで着信になるため、
+        //    全体一致だけを、曖昧な発信語より先に見る。
+        if (hasRingingField(snapshot)) return CallNotificationState.INCOMING
+
+        // 8. 状態の欄が「Ringing」などなら着信。
         if (AMBIGUOUS_INCOMING_MARKERS.any { status.contains(it) }) return CallNotificationState.INCOMING
 
-        // 8. 状態の欄が「Calling…」「ダイヤル中」などなら呼び出し中。
+        // 9. 状態の欄が「Calling…」「ダイヤル中」などなら呼び出し中。
         if (AMBIGUOUS_DIALING_MARKERS.any { status.contains(it) }) return CallNotificationState.DIALING
 
-        // 9. 本文にしか無い紛らわしい発信語（連絡先名の可能性がある）。
+        // 10. 本文にしか無い紛らわしい発信語（連絡先名の可能性がある）。
         if (AMBIGUOUS_DIALING_MARKERS.any { lower.contains(it) }) return CallNotificationState.DIALING
 
-        // 10. 本文にしか無い紛らわしい着信の語（Stringing Service など）。
+        // 11. 本文にしか無い紛らわしい着信の語（Stringing Service など）。
         if (AMBIGUOUS_INCOMING_MARKERS.any { lower.contains(it) }) return CallNotificationState.INCOMING
 
-        // 11. 本文にしか無い通話中の語（In call / On Call など）。
+        // 12. 本文にしか無い通話中の語（In call / On Call など）。
         if (AMBIGUOUS_ACTIVE_MARKERS.any { lower.contains(it) }) return CallNotificationState.ACTIVE
 
         return CallNotificationState.UNKNOWN_CALL
     }
+
+    private fun hasRingingField(snapshot: CallNotificationSnapshot): Boolean =
+        listOf(snapshot.title, snapshot.text, snapshot.bigText, snapshot.subText)
+            .any { RINGING_FIELD.matches(it) }
 
     /** `MM:SS` / `H:MM:SS` を秒へ。見つからなければ null。 */
     fun parseElapsedSeconds(text: String): Int? {
