@@ -68,17 +68,29 @@ class CallNotificationParserTest {
     }
 
     @Test
-    fun `google dialer calling with chronometer is still dialing`() {
+    fun `answered call with a calling contact name in the title is active`() {
+        // タイトルが連絡先名でも、クロノメーターが動いていれば応答後とみなす。
         val state = CallNotificationParser.parse(
-            snapshot(
-                packageName = "com.google.android.dialer",
-                title = "Calling…",
-                text = "03-1234-5678",
-                chronometer = true,
-                whenMillis = 1_700_000_000_000L,
-            ),
+            snapshot(title = "Calling office", text = "00:00", chronometer = true, whenMillis = 1_700_000_030_000L),
+        )
+        assertEquals(CallNotificationState.ACTIVE, state)
+    }
+
+    @Test
+    fun `dialing wording beats an on-call contact name during dialing`() {
+        // タイトルが連絡先名（On Call Support）でも、本文が「発信中」なら呼び出し中。
+        val state = CallNotificationParser.parse(
+            snapshot(title = "On Call Support", text = "発信中…", chronometer = true, whenMillis = 1_700_000_000_000L),
         )
         assertEquals(CallNotificationState.DIALING, state)
+    }
+
+    @Test
+    fun `kelvin callahan answered call is active`() {
+        val state = CallNotificationParser.parse(
+            snapshot(title = "Kevin Callahan", text = "通話中 00:05", chronometer = true, whenMillis = 1_700_000_030_000L),
+        )
+        assertEquals(CallNotificationState.ACTIVE, state)
     }
 
     @Test
