@@ -129,6 +129,7 @@ private fun CallTimerApp(viewModel: CallTimerViewModel = viewModel()) {
                 onSetStartMode = viewModel::setStartMode,
                 onSetOffsetSeconds = viewModel::setOffsetSeconds,
                 onSetStartElapsed = viewModel::setStartElapsedSeconds,
+                onStepStartElapsed = viewModel::changeStartElapsedSeconds,
                 onSetShowElapsed = viewModel::setShowElapsedInNotification,
                 onSetAfterFive = viewModel::setAfterFive,
                 onRestorePreset = viewModel::restorePreset,

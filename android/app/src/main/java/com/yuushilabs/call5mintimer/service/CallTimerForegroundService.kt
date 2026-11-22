@@ -66,7 +66,6 @@ class CallTimerForegroundService : Service() {
     private var sessionStartElapsed = 0L
     private var countStartElapsed = 0L
     private var tracker: ElapsedTracker? = null
-    private var startOffsetSeconds = 0
     private var sawNonIdle = false
     private var lastNotificationText = ""
 
@@ -154,8 +153,9 @@ class CallTimerForegroundService : Service() {
         CallTimerState.counting.value = true
         acquireWakeLock()
         countStartElapsed = baseElapsed + delayMillis
-        // 開始位置（0:06 など）は計測を始める瞬間の設定で決める。
-        startOffsetSeconds = settings.startElapsedSeconds
+        // 開始位置（0:06 など）は ElapsedTracker を作るときに読む。
+        // ここで settings を読むと、応答検知（ACTION_CONNECTED）が設定の読込より先に
+        // 届いた場合に既定の 0 が固まってしまう。tracker = null に戻して作り直させる。
         tracker = null
         tickJob?.cancel()
         tickJob = scope.launch { tickLoop() }
@@ -169,7 +169,11 @@ class CallTimerForegroundService : Service() {
                 if (schedule != null) {
                     // 0:00 の合図は、開始位置（startElapsedSeconds）が 0 より大きくても
                     // 計測を始めた瞬間に 1 回だけ鳴らす。
-                    val current = tracker ?: ElapsedTracker(schedule, startOffsetSeconds).also { tracker = it }
+                    // engine と settings は同じコルーチンで読込順に代入されるので、
+                    // engine が入った時点の settings は読込済み。
+                    val current = tracker ?: ElapsedTracker(schedule, settings.startElapsedSeconds).also {
+                        tracker = it
+                    }
                     current.takeStartCue().forEach { dispatcher.dispatch(it) }
                     val delta = (elapsedMs / 1_000L).toInt()
                     val elapsed = current.elapsedSeconds(delta)

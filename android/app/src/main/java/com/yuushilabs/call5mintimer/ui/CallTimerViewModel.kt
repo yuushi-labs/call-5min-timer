@@ -110,6 +110,16 @@ class CallTimerViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    /** ステッパー用。連続操作でも取りこぼさないよう、保存済みの最新値に増分を足す。 */
+    fun changeStartElapsedSeconds(delta: Int) = viewModelScope.launch {
+        repository.update {
+            it.copy(
+                startElapsedSeconds = (it.startElapsedSeconds + delta)
+                    .coerceIn(0, ElapsedTracker.MAX_START_ELAPSED_SECONDS),
+            )
+        }
+    }
+
     fun setShowElapsedInNotification(enabled: Boolean) = viewModelScope.launch {
         repository.update { it.copy(showElapsedInNotification = enabled) }
     }

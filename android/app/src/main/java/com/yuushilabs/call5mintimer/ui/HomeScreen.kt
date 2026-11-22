@@ -72,6 +72,7 @@ fun HomeScreen(
     onSetStartMode: (StartMode) -> Unit,
     onSetOffsetSeconds: (Int) -> Unit,
     onSetStartElapsed: (Int) -> Unit,
+    onStepStartElapsed: (Int) -> Unit,
     onSetShowElapsed: (Boolean) -> Unit,
     onSetAfterFive: (AfterFiveMode) -> Unit,
     onRestorePreset: () -> Unit,
@@ -117,6 +118,7 @@ fun HomeScreen(
                 onSetStartMode = onSetStartMode,
                 onSetOffsetSeconds = onSetOffsetSeconds,
                 onSetStartElapsed = onSetStartElapsed,
+                onStepStartElapsed = onStepStartElapsed,
                 onSetShowElapsed = onSetShowElapsed,
             )
         }
@@ -334,6 +336,7 @@ private fun StartModeCard(
     onSetStartMode: (StartMode) -> Unit,
     onSetOffsetSeconds: (Int) -> Unit,
     onSetStartElapsed: (Int) -> Unit,
+    onStepStartElapsed: (Int) -> Unit,
     onSetShowElapsed: (Boolean) -> Unit,
 ) {
     SectionCard(
@@ -387,7 +390,7 @@ private fun StartModeCard(
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(
-                onClick = { onSetStartElapsed((settings.startElapsedSeconds - 1).coerceAtLeast(0)) },
+                onClick = { onStepStartElapsed(-1) },
             ) {
                 Text("−1秒")
             }
@@ -399,12 +402,7 @@ private fun StartModeCard(
                 modifier = Modifier.weight(1f),
             )
             TextButton(
-                onClick = {
-                    onSetStartElapsed(
-                        (settings.startElapsedSeconds + 1)
-                            .coerceAtMost(ElapsedTracker.MAX_START_ELAPSED_SECONDS),
-                    )
-                },
+                onClick = { onStepStartElapsed(1) },
             ) {
                 Text("+1秒")
             }
