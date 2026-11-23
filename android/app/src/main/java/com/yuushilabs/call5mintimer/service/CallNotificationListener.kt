@@ -4,9 +4,11 @@ import android.app.Notification
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import com.yuushilabs.call5mintimer.core.CallDiagnostics
 import com.yuushilabs.call5mintimer.core.CallNotificationParser
 import com.yuushilabs.call5mintimer.core.CallNotificationSnapshot
 import com.yuushilabs.call5mintimer.core.CallNotificationState
+import com.yuushilabs.call5mintimer.core.DialingAnswerDetector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,9 +38,35 @@ class CallNotificationListener : NotificationListenerService() {
     /** 着信と判定したときのセッション ID。別セッションに変わっていたら古い着信情報は無効。 */
     @Volatile private var incomingSessionId = 0L
 
+    /**
+     * 通知キーごとの直前のスナップショット（最大 [MAX_TRACKED_SNAPSHOTS] 件）。
+     * OPPO（ColorOS）のように「発信」の文言が残ったまま経過時間の起点だけが変わる端末で、
+     * 応答を検出するために使う。文字列そのものは残さず、判定に必要な値だけを持つ。
+     */
+    private val lastSnapshots = object : LinkedHashMap<String, CallNotificationSnapshot>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CallNotificationSnapshot>): Boolean =
+            size > MAX_TRACKED_SNAPSHOTS
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
-        val snapshot = sbn?.let { toSnapshot(it) } ?: return
-        val state = CallNotificationParser.parse(snapshot)
+        sbn ?: return
+        handle(sbn)
+    }
+
+    /**
+     * 通話通知1件を判定して、サービスに伝える。
+     * 通知の投稿時と、リスナー接続時の既存通知の確認（[onListenerConnected]）の両方から呼ぶ。
+     */
+    private fun handle(sbn: StatusBarNotification) {
+        val snapshot = toSnapshot(sbn)
+        val result = CallNotificationParser.inspect(snapshot)
+        val previous = synchronized(lastSnapshots) { lastSnapshots[sbn.key] }
+        val promoted = result.state == CallNotificationState.DIALING &&
+            (sawDialing || CallTimerState.detectedOutgoing.value) &&
+            DialingAnswerDetector.chronometerRestarted(previous, snapshot)
+        val state = if (promoted) CallNotificationState.ACTIVE else result.state
+        synchronized(lastSnapshots) { lastSnapshots[sbn.key] = snapshot }
+
         when (state) {
             CallNotificationState.DIALING -> {
                 sawDialing = true
@@ -68,6 +96,20 @@ class CallNotificationListener : NotificationListenerService() {
 
             CallNotificationState.NONE, CallNotificationState.UNKNOWN_CALL -> Unit
         }
+
+        // 実機で反応しないときの手がかり。番号・連絡先名は入れず、判定に使った項目だけ残す。
+        // 通話アプリ以外の通知で、通話の判定を上書きしない。
+        if (state != CallNotificationState.NONE) {
+            CallDiagnostics.record(
+                snapshot = snapshot,
+                result = result,
+                state = state,
+                sawDialing = sawDialing,
+                promotedByChronometerRestart = promoted,
+                timerRunning = CallTimerState.running.value,
+                timerCounting = CallTimerState.counting.value,
+            )
+        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
@@ -85,6 +127,7 @@ class CallNotificationListener : NotificationListenerService() {
         // 現在のセッションで追跡している通話通知だけが終話判定の対象。
         // 留守番電話の表示など無関係な通知はここで除外される。
         if (key !in sessionKeys) return
+        synchronized(lastSnapshots) { lastSnapshots.remove(key) }
 
         // 通話アプリは通知を消して別キーで出し直すことがある。1.5 秒待って
         // 「このセッションで追跡している通話通知が1件も無い」ことと「同じ通話セッション
@@ -100,6 +143,7 @@ class CallNotificationListener : NotificationListenerService() {
             if (sessionNotificationsGone && !sessionChanged) {
                 sawDialing = false
                 sessionKeys.clear()
+                incomingKeys.clear()
                 if (CallTimerState.running.value) {
                     CallTimerForegroundService.stop(this@CallNotificationListener)
                 }
@@ -110,6 +154,14 @@ class CallNotificationListener : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         Log.i(TAG, "notification listener connected")
+        // リスナーが再接続したとき、すでに通話通知が出ていることがある
+        // （アプリのプロセスが落ちて再起動した直後、通知アクセスを許可した直後など）。
+        // その場合は投稿イベントを取りこぼすので、既存の通知を1度だけ確認する。
+        val active = runCatching { activeNotifications?.toList().orEmpty() }.getOrDefault(emptyList())
+        active.forEach { sbn ->
+            runCatching { handle(sbn) }
+                .onFailure { Log.w(TAG, "failed to inspect an active notification", it) }
+        }
     }
 
     override fun onDestroy() {
@@ -135,6 +187,7 @@ class CallNotificationListener : NotificationListenerService() {
     private companion object {
         const val TAG = "CallNotification"
         const val END_GRACE_MS = 1_500L
+        const val MAX_TRACKED_SNAPSHOTS = 8
 
         /** `Notification.EXTRA_SHOW_CHRONOMETER` と同じ値（通話アプリが通話中だけ true にする）。 */
         const val EXTRA_SHOW_CHRONOMETER = "android.showChronometer"
