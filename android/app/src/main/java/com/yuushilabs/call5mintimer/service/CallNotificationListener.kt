@@ -137,7 +137,8 @@ class CallNotificationListener : NotificationListenerService() {
         if (state == CallNotificationState.INCOMING) {
             // この着信通知が消えた。同じキーが ACTIVE になっても着信応答として扱うため、
             // キーは残す（判定は incomingSessionId で古いセッションを無効化する）。
-            resetAnswerMarks()
+            // 比較用の値は上のキー単位の削除だけで十分。全消去すると、進行中の発信通知の
+            // 比較用の値まで消してしまう（不在着信の消去と発信が重なる場合）。
             return
         }
         if (state != CallNotificationState.DIALING && state != CallNotificationState.ACTIVE) return
