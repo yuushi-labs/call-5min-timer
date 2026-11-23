@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.yuushilabs.call5mintimer.core.AlertSpec
+import com.yuushilabs.call5mintimer.core.CallDiagnostics
 import com.yuushilabs.call5mintimer.core.AlertEvent
 import com.yuushilabs.call5mintimer.core.ElapsedTracker
 import com.yuushilabs.call5mintimer.core.PeriodicRule
@@ -43,6 +44,9 @@ class CallTimerViewModel(application: Application) : AndroidViewModel(applicatio
     val sessionCounting = CallTimerState.counting
     val sessionElapsed = CallTimerState.elapsedSeconds
     val batteryBlocked = CallTimerState.batteryBlocked
+
+    /** 直近の通話通知の判定（「通知判定の診断」カード用。メモリ内のみ）。 */
+    val diagnostics = CallDiagnostics.latest
 
     var permissions by mutableStateOf(PermissionSnapshot())
         private set
@@ -81,6 +85,8 @@ class CallTimerViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
     }
+
+    fun clearDiagnostics() = CallDiagnostics.clear()
 
     fun refreshPermissions() {
         val context = getApplication<Application>()

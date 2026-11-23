@@ -308,4 +308,138 @@ class CallNotificationParserTest {
         assertEquals(true, CallNotificationParser.isCallApp("com.oplus.dialer"))
         assertEquals(false, CallNotificationParser.isCallApp("com.example.app"))
     }
+
+    // --- OPPO（ColorOS）で「相手が出ても止まる」報告の再現ケース ---
+
+    @Test
+    fun `an exact dialing label in the body with a zero clock is still dialing`() {
+        // 本文が「発信」だけ（欄の全体一致）のときは、状態の語として扱う。
+        val state = CallNotificationParser.parse(
+            snapshot(
+                title = "090-1234-5678",
+                text = "発信",
+                bigText = "00:00",
+                chronometer = true,
+                whenMillis = 1_700_000_000_000L,
+            ),
+        )
+        assertEquals(CallNotificationState.DIALING, state)
+    }
+
+    @Test
+    fun `oppo answered call that keeps a dialing label in the subtext is active`() {
+        // 相手が出た後もサブテキストに「SIM1 発信」が残り、本文が「通話中」になるケース。
+        // 発信語の2文字部分一致を先に見ていた v0.1.2 では、ここが DIALING のまま止まっていた。
+        val state = CallNotificationParser.parse(
+            snapshot(
+                packageName = "com.coloros.dialer",
+                title = "090-1234-5678",
+                text = "通話中",
+                subText = "SIM1 発信",
+                chronometer = true,
+                whenMillis = 1_700_000_030_000L,
+            ),
+        )
+        assertEquals(CallNotificationState.ACTIVE, state)
+    }
+
+    @Test
+    fun `oppo answered call with a dialing label and a one second clock is active`() {
+        // 「発信」のラベルが残ったまま 00:01 以上に進んだら、呼び出し中は終わっている。
+        val state = CallNotificationParser.parse(
+            snapshot(
+                packageName = "com.coloros.dialer",
+                title = "090-1234-5678",
+                text = "00:01",
+                subText = "SIM1 発信",
+                chronometer = true,
+                whenMillis = 1_700_000_030_000L,
+            ),
+        )
+        assertEquals(CallNotificationState.ACTIVE, state)
+    }
+
+    @Test
+    fun `oppo answered call with a dialing label only in the description is active`() {
+        // 説明欄（bigText）の「発信」は状態の欄ではないので、応答の判定を止めない。
+        val state = CallNotificationParser.parse(
+            snapshot(
+                packageName = "com.coloros.dialer",
+                title = "090-1234-5678",
+                text = "00:00",
+                bigText = "SIM1 発信",
+                chronometer = true,
+                whenMillis = 1_700_000_030_000L,
+            ),
+        )
+        assertEquals(CallNotificationState.ACTIVE, state)
+    }
+
+    @Test
+    fun `oppo dialing call with a dialing label in the subtext is still dialing`() {
+        // まだ「発信中…」で 00:00 の間は、同じ「発信」のラベルがあっても数えない。
+        val state = CallNotificationParser.parse(
+            snapshot(
+                packageName = "com.coloros.dialer",
+                title = "090-1234-5678",
+                text = "発信中…",
+                subText = "SIM1 発信",
+                bigText = "00:00",
+                chronometer = true,
+                whenMillis = 1_700_000_000_000L,
+            ),
+        )
+        assertEquals(CallNotificationState.DIALING, state)
+    }
+
+    @Test
+    fun `answered call with a contact name that looks like a dialer label is active`() {
+        val state = CallNotificationParser.parse(
+            snapshot(title = "発信者サービス", text = "00:02", chronometer = true, whenMillis = 1_700_000_030_000L),
+        )
+        assertEquals(CallNotificationState.ACTIVE, state)
+    }
+
+    @Test
+    fun `talk time wording counts as active`() {
+        val state = CallNotificationParser.parse(
+            snapshot(title = "090-1234-5678", text = "通話時間 00:30"),
+        )
+        assertEquals(CallNotificationState.ACTIVE, state)
+    }
+
+    @Test
+    fun `inspect reports why an oppo answered call is active`() {
+        val result = CallNotificationParser.inspect(
+            snapshot(
+                packageName = "com.coloros.dialer",
+                title = "090-1234-5678",
+                text = "通話中",
+                subText = "SIM1 発信",
+            ),
+        )
+        assertEquals(CallNotificationState.ACTIVE, result.state)
+        assertEquals(CallMatchReason.ACTIVE_BODY_WORD, result.reason)
+        assertEquals(listOf("通話中"), result.markers)
+    }
+
+    @Test
+    fun `inspect reports the clock as the reason when there is no wording`() {
+        val result = CallNotificationParser.inspect(
+            snapshot(title = "090-1234-5678", text = "00:05"),
+        )
+        assertEquals(CallNotificationState.ACTIVE, result.state)
+        assertEquals(CallMatchReason.ACTIVE_CLOCK, result.reason)
+        assertEquals(emptyList<String>(), result.markers)
+    }
+
+    @Test
+    fun `inspect reports the dialing phrase and no clock reason`() {
+        val result = CallNotificationParser.inspect(
+            snapshot(title = "発信中…", text = "090-1234-5678", chronometer = true, whenMillis = 1_700_000_000_000L),
+        )
+        assertEquals(CallNotificationState.DIALING, result.state)
+        assertEquals(CallMatchReason.DIALING_PHRASE, result.reason)
+        assertEquals(listOf("発信中"), result.markers)
+    }
 }

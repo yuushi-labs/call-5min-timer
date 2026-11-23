@@ -56,6 +56,7 @@ private fun CallTimerApp(viewModel: CallTimerViewModel = viewModel()) {
     val counting by viewModel.sessionCounting.collectAsStateWithLifecycle()
     val elapsed by viewModel.sessionElapsed.collectAsStateWithLifecycle()
     val batteryBlocked by viewModel.batteryBlocked.collectAsStateWithLifecycle()
+    val diagnostics by viewModel.diagnostics.collectAsStateWithLifecycle()
 
     var screen by remember { mutableStateOf(Screen.Home) }
     var editor by remember { mutableStateOf<RuleEditorTarget?>(null) }
@@ -107,6 +108,7 @@ private fun CallTimerApp(viewModel: CallTimerViewModel = viewModel()) {
                 counting = counting,
                 elapsedSeconds = elapsed,
                 batteryBlocked = batteryBlocked,
+                diagnostics = diagnostics,
                 updateState = updateState,
                 timeline = viewModel.presetTimeline(),
                 onOpenGuide = { screen = Screen.Guide },
@@ -142,6 +144,7 @@ private fun CallTimerApp(viewModel: CallTimerViewModel = viewModel()) {
                 onDeletePeriodic = viewModel::deletePeriodic,
                 onDeleteSpot = viewModel::deleteSpot,
                 onPreviewRule = viewModel::previewRule,
+                onClearDiagnostics = viewModel::clearDiagnostics,
                 onCheckUpdates = { viewModel.checkForUpdates(force = true) },
                 onDownloadUpdate = viewModel::downloadAndInstall,
                 onRetryInstall = viewModel::retryInstall,

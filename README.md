@@ -22,7 +22,7 @@ ahamo など「1回5分以内の国内通話無料」プラン向けの Android 
 
 ## インストール
 
-1. [Releases](../../releases/latest) から `call-5min-timer-v0.1.2.apk` をダウンロード
+1. [Releases](../../releases/latest) から `call-5min-timer-v0.1.3.apk` をダウンロード
 2. 「提供元不明のアプリ」の許可を求められたら許可してインストール
 3. アプリを開き、画面の「動作に必要な設定」を上から順に許可
 
@@ -47,8 +47,11 @@ OPPO（ColorOS）では追加で **電池の最適化から外す** と **自動
 - `PHONE_STATE`（`CallStateReceiver`）の OFFHOOK で発信を検知し、IDLE で終話を検知
 - `NotificationListenerService` で通話アプリの進行中通知を監視し、「発信中」から
   「通話中（`00:00` / クロノメーター開始）」に変わった瞬間を計測開始とする。
-  OPPO（ColorOS）は「発信中」のままクロノメーターや `00:00` を出すことがあるため、
-  文言が「発信中」の間はカウントしない
+  OPPO（ColorOS）は「発信中」のままクロノメーターや `00:00` を出すこと、応答後も
+  サブテキストに「SIM1 発信」を残すことがあるため、「通話中」を発信語より先に見て、
+  文言が「発信中」の間はカウントしない（v0.1.3 でこの順序を修正）。
+  それでも反応しないときは、画面下部の「通知判定の診断」に直近の通知の判定理由が出る
+  （番号・連絡先名は表示しない）
 - 通話中だけ `ForegroundService` が動き、`CALL_STATE_IDLE` か通話通知の消滅で即終了（常駐しない）
 - 判定は `TimerEngine` / `CallNotificationParser` という純粋な Kotlin に切り出し、JVM テストで検証
 

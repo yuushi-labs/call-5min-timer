@@ -44,6 +44,9 @@ import androidx.compose.ui.unit.dp
 import com.yuushilabs.call5mintimer.BuildConfig
 import com.yuushilabs.call5mintimer.core.AfterFiveMode
 import com.yuushilabs.call5mintimer.core.AlertEvent
+import com.yuushilabs.call5mintimer.core.CallDiagnosticsEntry
+import com.yuushilabs.call5mintimer.core.CallMatchReason
+import com.yuushilabs.call5mintimer.core.CallNotificationState
 import com.yuushilabs.call5mintimer.core.ElapsedTracker
 import com.yuushilabs.call5mintimer.core.PeriodicRule
 import com.yuushilabs.call5mintimer.core.SpotRule
@@ -62,6 +65,7 @@ fun HomeScreen(
     counting: Boolean,
     elapsedSeconds: Int,
     batteryBlocked: Boolean,
+    diagnostics: CallDiagnosticsEntry?,
     updateState: UpdateUiState,
     timeline: List<AlertEvent>,
     onOpenGuide: () -> Unit,
@@ -90,6 +94,7 @@ fun HomeScreen(
     onRetryInstall: () -> Unit,
     onOpenInstallSettings: () -> Unit,
     onSetAutoCheck: (Boolean) -> Unit,
+    onClearDiagnostics: () -> Unit,
 ) {
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
@@ -148,6 +153,9 @@ fun HomeScreen(
                 onOpenInstallSettings = onOpenInstallSettings,
                 onSetAutoCheck = onSetAutoCheck,
             )
+        }
+        item {
+            DiagnosticsCard(entry = diagnostics, onClear = onClearDiagnostics)
         }
         item {
             Text(
@@ -662,4 +670,105 @@ private fun UpdateCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+@Composable
+private fun DiagnosticsCard(entry: CallDiagnosticsEntry?, onClear: () -> Unit) {
+    SectionCard(
+        title = "通知判定の診断",
+        subtitle = "直近の通話通知をどう判定したか。反応しないときの原因探しに使います。" +
+            "電話番号と連絡先名は表示せず、各欄は文字数だけを示します。メモリ内の1件だけで、保存も送信もしません。",
+    ) {
+        if (entry == null) {
+            Text(
+                "まだ通話アプリの通知を受け取っていません。通話アプリの通知が出ると、ここに最新の判定が1件だけ残ります。",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            return@SectionCard
+        }
+        Text(
+            "${formatDiagnosticsTime(entry.receivedAtMillis)} 受信",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        DiagRow("判定", stateLabel(entry.state))
+        DiagRow("理由", reasonLabel(entry.reason))
+        DiagRow("通話アプリ", entry.packageName)
+        DiagRow("カテゴリ", entry.category ?: "なし")
+        DiagRow(
+            "欄の長さ",
+            "タイトル${entry.titleLength}・本文${entry.textLength}・説明${entry.bigTextLength}・サブ${entry.subTextLength}",
+        )
+        DiagRow(
+            "クロノメーター",
+            when {
+                entry.chronometerRunning && entry.hasWhen -> "あり（起点あり）"
+                entry.chronometerRunning -> "あり（起点なし）"
+                entry.hasWhen -> "なし（起点だけあり）"
+                else -> "なし"
+            },
+        )
+        DiagRow(
+            "表示されている経過",
+            entry.clockSeconds?.let { formatClock(it) } ?: "なし",
+        )
+        DiagRow("検出した語", entry.markers.joinToString("・").ifBlank { "なし" })
+        DiagRow("この通話で発信を観測", if (entry.sawDialing) "はい" else "いいえ")
+        if (entry.promotedByChronometerRestart) {
+            DiagRow("起点の更新", "応答と判断して計測を開始")
+        }
+        DiagRow(
+            "タイマー",
+            when {
+                entry.timerCounting -> "計測中"
+                entry.timerRunning -> "相手の応答を待っています"
+                else -> "待機中"
+            },
+        )
+        TextButton(onClick = onClear) { Text("この表示を消す") }
+    }
+}
+
+@Composable
+private fun DiagRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(128.dp),
+        )
+        Text(value, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+private fun formatDiagnosticsTime(millis: Long): String =
+    java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.JAPAN).format(java.util.Date(millis))
+
+private fun stateLabel(state: CallNotificationState): String = when (state) {
+    CallNotificationState.NONE -> "通話アプリの通知ではない"
+    CallNotificationState.INCOMING -> "着信（数えない）"
+    CallNotificationState.DIALING -> "発信中（まだ数えない）"
+    CallNotificationState.ACTIVE -> "通話中（計測を開始）"
+    CallNotificationState.UNKNOWN_CALL -> "通話通知だが判定できない"
+}
+
+private fun reasonLabel(reason: CallMatchReason): String = when (reason) {
+    CallMatchReason.NOT_CALL_APP -> "通話アプリの通知ではない"
+    CallMatchReason.INCOMING_STATUS_WORD -> "状態の欄の着信語"
+    CallMatchReason.INCOMING_BODY_WORD -> "本文の着信語"
+    CallMatchReason.INCOMING_RINGING_FIELD -> "欄全体が Ringing"
+    CallMatchReason.INCOMING_AMBIGUOUS_STATUS -> "状態の欄の紛らわしい着信語"
+    CallMatchReason.INCOMING_AMBIGUOUS_BODY -> "本文の紛らわしい着信語"
+    CallMatchReason.ACTIVE_STATUS_WORD -> "状態の欄の「通話中」"
+    CallMatchReason.ACTIVE_BODY_WORD -> "本文の「通話中」"
+    CallMatchReason.ACTIVE_CHRONOMETER -> "クロノメーターが動作中"
+    CallMatchReason.ACTIVE_CLOCK -> "経過時間の表示"
+    CallMatchReason.ACTIVE_AMBIGUOUS_BODY -> "本文の「In call」など"
+    CallMatchReason.ACTIVE_CHRONOMETER_RESTART -> "経過時間の起点が更新された（応答）"
+    CallMatchReason.DIALING_PHRASE -> "「発信中」「呼び出し中」などの文言"
+    CallMatchReason.DIALING_STATUS_LABEL -> "状態の欄の「発信」「呼び出し」"
+    CallMatchReason.DIALING_AMBIGUOUS_STATUS -> "状態の欄の「Calling」など"
+    CallMatchReason.DIALING_AMBIGUOUS_BODY -> "本文の「Calling」など"
+    CallMatchReason.UNKNOWN -> "手がかりなし"
 }
