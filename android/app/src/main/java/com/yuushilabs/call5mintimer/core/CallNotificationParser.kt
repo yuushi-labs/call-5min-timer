@@ -111,6 +111,12 @@ object CallNotificationParser {
      */
     private val STATUS_DIALING_LABELS = listOf("発信", "呼び出し")
 
+    /**
+     * 欄の全体が「発信」「呼び出し」だけのとき。本文でも、連絡先名ではなく状態の語とみなす。
+     * 部分一致にしないので `SIM1 発信` や `発信者` は当たらない。
+     */
+    private val FULL_DIALING_LABEL = Regex("""^\s*(発信|呼び出し)[\s.…]*$""")
+
     /** 連絡先名にも現れうる発信語。状態の欄でだけ、通話中の手がかりより優先する。 */
     private val AMBIGUOUS_DIALING_MARKERS = listOf("ダイヤル", "calling")
 
@@ -196,16 +202,15 @@ object CallNotificationParser {
             return CallParseResult(CallNotificationState.DIALING, CallMatchReason.DIALING_PHRASE, it)
         }
 
-        // 7. 状態の欄の短い「発信」「呼び出し」（タイトルが「発信」だけの通知など）。
-        //    本文には広げない（`SIM1 発信` のような補足に誤爆するため）。
+        // 7. 短い「発信」「呼び出し」。状態の欄は部分一致、本文は欄の全体がその語だけのとき。
+        //    本文の部分一致まで広げると `SIM1 発信` のような補足に誤爆するため。
         //    ただし 00:01 以上の経過表示が出ていれば、呼び出し中はもう終わっている。
         //    OPPO（ColorOS）は発信中に 00:00 を出し、応答してから 00:01… と進むため、
         //    00:00 の間だけ「発信」の語を優先する（サイレントに待ち続けない）。
         val elapsedSeconds = parseElapsedSeconds(combined)
-        match(statusFields, STATUS_DIALING_LABELS)?.let {
-            if (elapsedSeconds == null || elapsedSeconds == 0) {
-                return CallParseResult(CallNotificationState.DIALING, CallMatchReason.DIALING_STATUS_LABEL, it)
-            }
+        val dialingLabel = match(statusFields, STATUS_DIALING_LABELS) ?: fullFieldDialingLabel(snapshot)
+        if (dialingLabel != null && (elapsedSeconds == null || elapsedSeconds == 0)) {
+            return CallParseResult(CallNotificationState.DIALING, CallMatchReason.DIALING_STATUS_LABEL, dialingLabel)
         }
 
         // 8. 文言が無い端末・通話アプリ向け。クロノメーターが動いている、または経過表示がある。
@@ -246,6 +251,16 @@ object CallNotificationParser {
 
     private fun match(fields: List<String>, markers: List<String>): List<String>? {
         val hit = markers.filter { marker -> fields.any { it.contains(marker, ignoreCase = true) } }
+        return hit.ifEmpty { null }
+    }
+
+    /** 欄の全体が「発信」「呼び出し」だけの欄を探す。 */
+    private fun fullFieldDialingLabel(snapshot: CallNotificationSnapshot): List<String>? {
+        val fields = listOf(snapshot.title, snapshot.text, snapshot.bigText, snapshot.subText)
+        val hit = fields.mapNotNull { field ->
+            val found = FULL_DIALING_LABEL.find(field) ?: return@mapNotNull null
+            found.groupValues[1]
+        }.distinct()
         return hit.ifEmpty { null }
     }
 

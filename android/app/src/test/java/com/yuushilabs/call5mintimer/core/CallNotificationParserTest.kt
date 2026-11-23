@@ -312,6 +312,21 @@ class CallNotificationParserTest {
     // --- OPPO（ColorOS）で「相手が出ても止まる」報告の再現ケース ---
 
     @Test
+    fun `an exact dialing label in the body with a zero clock is still dialing`() {
+        // 本文が「発信」だけ（欄の全体一致）のときは、状態の語として扱う。
+        val state = CallNotificationParser.parse(
+            snapshot(
+                title = "090-1234-5678",
+                text = "発信",
+                bigText = "00:00",
+                chronometer = true,
+                whenMillis = 1_700_000_000_000L,
+            ),
+        )
+        assertEquals(CallNotificationState.DIALING, state)
+    }
+
+    @Test
     fun `oppo answered call that keeps a dialing label in the subtext is active`() {
         // 相手が出た後もサブテキストに「SIM1 発信」が残り、本文が「通話中」になるケース。
         // 発信語の2文字部分一致を先に見ていた v0.1.2 では、ここが DIALING のまま止まっていた。

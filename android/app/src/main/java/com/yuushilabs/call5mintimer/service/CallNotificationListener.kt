@@ -39,14 +39,18 @@ class CallNotificationListener : NotificationListenerService() {
     @Volatile private var incomingSessionId = 0L
 
     /**
-     * 通知キーごとの直前のスナップショット（最大 [MAX_TRACKED_SNAPSHOTS] 件）。
+     * 通知キーごとの直前の値（最大 [MAX_TRACKED_SNAPSHOTS] 件）。
      * OPPO（ColorOS）のように「発信」の文言が残ったまま経過時間の起点だけが変わる端末で、
-     * 応答を検出するために使う。文字列そのものは残さず、判定に必要な値だけを持つ。
+     * 応答を検出するために使う。電話番号・連絡先名・本文は持たず、起点とクロノメーターの
+     * 有無だけを残す。通話のたびに [callGeneration] を進めるので、前の通話の値は使わない。
      */
-    private val lastSnapshots = object : LinkedHashMap<String, CallNotificationSnapshot>() {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CallNotificationSnapshot>): Boolean =
+    private val answerMarks = object : LinkedHashMap<String, DialingAnswerDetector.Mark>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, DialingAnswerDetector.Mark>): Boolean =
             size > MAX_TRACKED_SNAPSHOTS
     }
+
+    /** 通話セッションの世代。着信・終話で進め、古い比較用の値を無効にする。 */
+    @Volatile private var callGeneration = 0L
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         sbn ?: return
@@ -60,12 +64,20 @@ class CallNotificationListener : NotificationListenerService() {
     private fun handle(sbn: StatusBarNotification) {
         val snapshot = toSnapshot(sbn)
         val result = CallNotificationParser.inspect(snapshot)
-        val previous = synchronized(lastSnapshots) { lastSnapshots[sbn.key] }
+        val generation = callGeneration
+        val previous = synchronized(answerMarks) { answerMarks[sbn.key] }
         val promoted = result.state == CallNotificationState.DIALING &&
+            previous != null && previous.generation == generation &&
             (sawDialing || CallTimerState.detectedOutgoing.value) &&
             DialingAnswerDetector.chronometerRestarted(previous, snapshot)
         val state = if (promoted) CallNotificationState.ACTIVE else result.state
-        synchronized(lastSnapshots) { lastSnapshots[sbn.key] = snapshot }
+        // 通話アプリ以外の通知は保存しない（無関係な通知で、通話中の比較用の値が
+        // 押し出されないようにする）。
+        if (result.state != CallNotificationState.NONE) {
+            synchronized(answerMarks) {
+                answerMarks[sbn.key] = DialingAnswerDetector.markOf(snapshot, generation)
+            }
+        }
 
         when (state) {
             CallNotificationState.DIALING -> {
@@ -89,9 +101,11 @@ class CallNotificationListener : NotificationListenerService() {
             }
 
             CallNotificationState.INCOMING -> {
+                // 着信は新しい通話。前の通話の比較用の値は使わない。
                 sawDialing = false
                 incomingKeys.add(sbn.key)
                 incomingSessionId = CallTimerState.sessionId.value
+                resetAnswerMarks()
             }
 
             CallNotificationState.NONE, CallNotificationState.UNKNOWN_CALL -> Unit
@@ -117,9 +131,13 @@ class CallNotificationListener : NotificationListenerService() {
         val state = CallNotificationParser.parse(snapshot)
         val key = sbn.key
 
+        // 消えた通知の比較用の値は残さない（着信・非通話の通知も含む）。
+        synchronized(answerMarks) { answerMarks.remove(key) }
+
         if (state == CallNotificationState.INCOMING) {
             // この着信通知が消えた。同じキーが ACTIVE になっても着信応答として扱うため、
             // キーは残す（判定は incomingSessionId で古いセッションを無効化する）。
+            resetAnswerMarks()
             return
         }
         if (state != CallNotificationState.DIALING && state != CallNotificationState.ACTIVE) return
@@ -127,7 +145,6 @@ class CallNotificationListener : NotificationListenerService() {
         // 現在のセッションで追跡している通話通知だけが終話判定の対象。
         // 留守番電話の表示など無関係な通知はここで除外される。
         if (key !in sessionKeys) return
-        synchronized(lastSnapshots) { lastSnapshots.remove(key) }
 
         // 通話アプリは通知を消して別キーで出し直すことがある。1.5 秒待って
         // 「このセッションで追跡している通話通知が1件も無い」ことと「同じ通話セッション
@@ -144,6 +161,7 @@ class CallNotificationListener : NotificationListenerService() {
                 sawDialing = false
                 sessionKeys.clear()
                 incomingKeys.clear()
+                resetAnswerMarks()
                 if (CallTimerState.running.value) {
                     CallTimerForegroundService.stop(this@CallNotificationListener)
                 }
@@ -167,6 +185,12 @@ class CallNotificationListener : NotificationListenerService() {
     override fun onDestroy() {
         scope.cancel()
         super.onDestroy()
+    }
+
+    /** 比較用の値を捨て、次の通話を別の世代として扱う。 */
+    private fun resetAnswerMarks() {
+        callGeneration += 1
+        synchronized(answerMarks) { answerMarks.clear() }
     }
 
     private fun toSnapshot(sbn: StatusBarNotification): CallNotificationSnapshot {
